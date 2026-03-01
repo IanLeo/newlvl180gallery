@@ -13,17 +13,27 @@ function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeig
 resize();
 window.addEventListener('resize', resize);
 
-const N = 3200, N_INNER = 1400, FPS = 60;
-const BREATH_IN = 5.0 * FPS, BREATH_OUT = 5.0 * FPS;
+const N = 180, FPS = 60;
 const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
+const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
 let drag = { active: false, lastX: 0, lastY: 0, velX: 0, velY: 0 };
+let clickedId = null;
+let pointerDownMoved = false;
+let hoverItem = null;
+let renderedItems = [];
+let zoom = 1, targetZoom = 1;
+let pinch = { active: false, startDist: 0, startZoom: 1 };
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function touchDistance(t0, t1) { return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY); }
 
 canvas.addEventListener('mousemove', e => {
   mouse.x = e.clientX; mouse.y = e.clientY;
   if (drag.active) {
+    if (Math.abs(e.clientX - drag.lastX) + Math.abs(e.clientY - drag.lastY) > 1) pointerDownMoved = true;
     drag.velX = e.clientX - drag.lastX;
     drag.velY = e.clientY - drag.lastY;
     rotY += drag.velX * 0.005;
@@ -35,60 +45,136 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mousedown', e => {
   drag.active = true; drag.lastX = e.clientX; drag.lastY = e.clientY;
   drag.velX = 0; drag.velY = 0;
+  pointerDownMoved = false;
   canvas.classList.add('dragging');
 });
-canvas.addEventListener('mouseup', () => { drag.active = false; canvas.classList.remove('dragging'); });
+canvas.addEventListener('mouseup', e => {
+  drag.active = false;
+  canvas.classList.remove('dragging');
+  if (!pointerDownMoved) {
+    const hit = pickTopItem(e.clientX, e.clientY);
+    clickedId = hit ? hit.d.id : null;
+  }
+});
 canvas.addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; drag.active = false; canvas.classList.remove('dragging'); });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  targetZoom = clamp(targetZoom * Math.exp(-e.deltaY * 0.0012), ZOOM_MIN, ZOOM_MAX);
+}, { passive: false });
 
 // Touch support
 canvas.addEventListener('touchstart', e => {
+  if (e.touches.length >= 2) {
+    pinch.active = true;
+    pinch.startDist = touchDistance(e.touches[0], e.touches[1]);
+    pinch.startZoom = targetZoom;
+    pointerDownMoved = true;
+    drag.active = false;
+    return;
+  }
   const t = e.touches[0];
   drag.active = true; drag.lastX = t.clientX; drag.lastY = t.clientY;
   drag.velX = 0; drag.velY = 0;
+  pointerDownMoved = false;
+  mouse.x = t.clientX; mouse.y = t.clientY;
 }, { passive: true });
 canvas.addEventListener('touchmove', e => {
+  if (e.touches.length >= 2) {
+    pinch.active = true;
+    pointerDownMoved = true;
+    const dist = touchDistance(e.touches[0], e.touches[1]);
+    if (pinch.startDist > 0) targetZoom = clamp(pinch.startZoom * (dist / pinch.startDist), ZOOM_MIN, ZOOM_MAX);
+    mouse.x = (e.touches[0].clientX + e.touches[1].clientX) * 0.5;
+    mouse.y = (e.touches[0].clientY + e.touches[1].clientY) * 0.5;
+    return;
+  }
   const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  if (Math.abs(t.clientX - drag.lastX) + Math.abs(t.clientY - drag.lastY) > 1) pointerDownMoved = true;
   drag.velX = t.clientX - drag.lastX; drag.velY = t.clientY - drag.lastY;
   rotY += drag.velX * 0.005; rotX -= drag.velY * 0.005;
   rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
   drag.lastX = t.clientX; drag.lastY = t.clientY;
 }, { passive: true });
-canvas.addEventListener('touchend', () => { drag.active = false; });
+canvas.addEventListener('touchend', e => {
+  if (e.touches.length < 2) pinch.active = false;
+  drag.active = false;
+  if (!pointerDownMoved) {
+    const hit = pickTopItem(mouse.x, mouse.y);
+    clickedId = hit ? hit.d.id : null;
+  }
+});
 
 function hash(n) { return ((Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1 + 1) % 1; }
 
-function breathRadius(t) {
-  const base = Math.min(W, H) * 0.36;
-  const cycle = BREATH_IN + BREATH_OUT;
-  const p = (t % cycle) / cycle;
-  const breath = p < 0.5 ? (1 - Math.cos(p * 2 * Math.PI)) / 2 : (1 + Math.cos((p - 0.5) * 2 * Math.PI)) / 2;
-  return base * (0.92 + breath * 0.16);
+function breathRadius() {
+  return Math.min(W, H) * 0.36;
 }
 
 function placeOnSphere(i) {
-  const u = hash(i * 3.7 + 1.1), v = hash(i * 5.3 + 2.9);
-  const warp1 = Math.sin(u * 11.3 + v * 7.1) * 0.09, warp2 = Math.cos(v * 9.7 + u * 5.3) * 0.09;
-  const phi = Math.acos(Math.max(-1, Math.min(1, 1 - 2 * ((u + warp1 + 1) % 1))));
-  const theta = ((v + warp2 + 1) % 1) * Math.PI * 2;
-  return { phi, theta };
+  const y = 1 - (2 * (i + 0.5)) / N;
+  const r = Math.sqrt(Math.max(0, 1 - y * y));
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const theta = i * golden + (hash(i * 13.17 + 0.2) - 0.5) * 0.06;
+  const x = Math.cos(theta) * r;
+  const z = Math.sin(theta) * r;
+  return { phi: Math.acos(clamp(y, -1, 1)), theta: Math.atan2(z, x) };
 }
+
+function svgThumb(seed, aspect) {
+  const w = Math.round(120 * Math.max(0.55, Math.min(1.8, aspect)));
+  const h = 120;
+  const h1 = Math.floor(hash(seed + 1.1) * 360);
+  const h2 = Math.floor((h1 + 40 + hash(seed + 3.1) * 120) % 360);
+  const h3 = Math.floor((h2 + 40 + hash(seed + 5.1) * 120) % 360);
+  const a = (hash(seed + 7.7) * 0.5 + 0.25).toFixed(2);
+  const a2 = (hash(seed + 8.9) * 0.4 + 0.15).toFixed(2);
+  const x1 = Math.floor(hash(seed + 9.3) * w), y1 = Math.floor(hash(seed + 10.3) * h);
+  const x2 = Math.floor(hash(seed + 11.3) * (w - 18) + 9), y2 = Math.floor(hash(seed + 12.3) * (h - 18) + 9);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0%" stop-color="hsl(${h1} 85% 60%)"/>` +
+    `<stop offset="55%" stop-color="hsl(${h2} 80% 55%)"/>` +
+    `<stop offset="100%" stop-color="hsl(${h3} 75% 48%)"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="${w}" height="${h}" fill="url(#g)"/>` +
+    `<circle cx="${x1}" cy="${y1}" r="${Math.round(h * 0.22)}" fill="rgba(255,255,255,${a})"/>` +
+    `<circle cx="${x2}" cy="${y2}" r="${Math.round(h * 0.16)}" fill="rgba(255,255,255,${a2})"/>` +
+    `<path d="M0 ${Math.round(h * 0.78)} C${Math.round(w * 0.2)} ${Math.round(h * (0.58 + hash(seed + 13) * 0.15))}, ${Math.round(w * 0.68)} ${Math.round(h * (0.88 - hash(seed + 14) * 0.15))}, ${w} ${Math.round(h * 0.62)} L${w} ${h} L0 ${h}Z" fill="rgba(0,0,0,0.18)"/>` +
+    `</svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+
+function makeGalleryPool(count) {
+  return Array.from({ length: count }, (_, i) => {
+    const img = new Image();
+    const aspect = 0.55 + hash(i * 9.7 + 1.2) * 1.45;
+    img.src = svgThumb(i * 17.31 + 0.4, aspect);
+    return { img, aspect };
+  });
+}
+
+const galleryPool = makeGalleryPool(N);
 
 class Dot {
   constructor(i) {
     const { phi, theta } = placeOnSphere(i);
+    this.id = i;
     this.phi = phi; this.theta = theta;
     this.ux = Math.sin(phi)*Math.cos(theta); this.uy = Math.cos(phi); this.uz = Math.sin(phi)*Math.sin(theta);
     const sz = Math.pow(hash(i * 7.13 + 0.5), 2.2);
-    this.baseSize = 0.6 + sz * 6.0;
+    this.baseSize = 36 + sz * 36.0;
     this.spawnT = hash(i * 4.1 + 1.7); this.opacity = 0; this.alive = false;
     this.fadeSpeed = 0.006 + hash(i * 9.1) * 0.022;
-    this.driftSeed = hash(i * 11.3) * 100; this.driftSpeed = 0.0008 + hash(i * 2.9) * 0.002;
-    this.driftAmp = 0.04 + hash(i * 6.1) * 0.10;
-    this.driftSeed2 = hash(i * 17.9) * 100; this.driftSpeed2 = 0.0005 + hash(i * 13.1) * 0.0015;
+    this.driftSeed = hash(i * 11.3) * 100; this.driftSpeed = 0.00028 + hash(i * 2.9) * 0.0007;
+    this.driftAmp = 0.012 + hash(i * 6.1) * 0.035;
+    this.driftSeed2 = hash(i * 17.9) * 100; this.driftSpeed2 = 0.00018 + hash(i * 13.1) * 0.00055;
     this.pulsePhase = hash(i * 8.7) * Math.PI * 2;
-    this.pulseSpeed = 0.007 + hash(i * 3.3) * 0.018;
-    this.pulseAmt = 0.04 + hash(i * 5.5) * 0.28;
+    this.pulseSpeed = 0.003 + hash(i * 3.3) * 0.008;
+    this.pulseAmt = 0.01 + hash(i * 5.5) * 0.035;
     this.hoverScale = 1.0;
+    this.media = galleryPool[i % galleryPool.length];
   }
   driftedUxyz(t) {
     const dp = Math.sin(this.driftSeed + t*this.driftSpeed*1.3)*this.driftAmp + Math.sin(this.driftSeed2 + t*this.driftSpeed2*0.7)*this.driftAmp*0.45;
@@ -98,49 +184,35 @@ class Dot {
   }
   project(ry, rx, Rv, cx, cy, t) {
     const { ux, uy, uz } = this.driftedUxyz(t);
-    const cosY=Math.cos(ry), sinY=Math.sin(ry);
-    const x1=ux*cosY+uz*sinY, y1=uy, z1=-ux*sinY+uz*cosY;
-    const cosX=Math.cos(rx), sinX=Math.sin(rx);
-    return { px: cx+x1*Rv, py: cy+(y1*cosX-z1*sinX)*Rv, fz: y1*sinX+z1*cosX };
+    const n = { x: ux, y: uy, z: uz };
+    const ref = Math.abs(n.y) > 0.92 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+    const t1 = normalize3(cross3(ref, n));
+    const t2 = normalize3(cross3(n, t1));
+    const p = rotate3(n, ry, rx);
+    const a1 = rotate3(t1, ry, rx);
+    const a2 = rotate3(t2, ry, rx);
+    return {
+      px: cx + p.x * Rv,
+      py: cy + p.y * Rv,
+      fz: p.z,
+      nx: p.x,
+      ny: p.y,
+      nz: p.z,
+      u3x: a1.x,
+      u3y: a1.y,
+      u3z: a1.z,
+      v3x: a2.x,
+      v3y: a2.y,
+      v3z: a2.z,
+      axx: a1.x,
+      axy: a1.y,
+      bxx: a2.x,
+      bxy: a2.y
+    };
   }
 }
 
-class InnerDot {
-  constructor(i) {
-    const seed = i * 31.7 + 7.3;
-    const r = Math.pow(hash(seed), 0.6);
-    const phi = Math.acos(1 - 2*hash(seed+1)), theta = hash(seed+2)*Math.PI*2;
-    this.ur = r;
-    this.ux = r*Math.sin(phi)*Math.cos(theta); this.uy = r*Math.cos(phi); this.uz = r*Math.sin(phi)*Math.sin(theta);
-    this.baseSize = 0.4 + hash(seed+3)*2.2; this.opacity = 0; this.alive = false;
-    this.spawnT = hash(seed+4); this.fadeSpeed = 0.004 + hash(seed+5)*0.012;
-    this.vx=(hash(seed+6)-.5)*.0006; this.vy=(hash(seed+7)-.5)*.0006; this.vz=(hash(seed+8)-.5)*.0006;
-    this.wx=(hash(seed+9)-.5)*.00012; this.wy=(hash(seed+10)-.5)*.00012; this.wz=(hash(seed+11)-.5)*.00012;
-    this.pulsePhase=hash(seed+12)*Math.PI*2; this.pulseSpeed=0.012+hash(seed+13)*0.025;
-    this.pulseAmt=0.1+hash(seed+14)*0.5; this.hoverScale=1.0;
-  }
-  update(t) {
-    this.vx+=this.wx; this.vy+=this.wy; this.vz+=this.wz;
-    const spd=Math.sqrt(this.vx*this.vx+this.vy*this.vy+this.vz*this.vz), maxSpd=0.0012;
-    if(spd>maxSpd){this.vx*=maxSpd/spd; this.vy*=maxSpd/spd; this.vz*=maxSpd/spd;}
-    const d=Math.sqrt(this.ux*this.ux+this.uy*this.uy+this.uz*this.uz), maxR=1.12;
-    if(d>maxR){const pull=(d-maxR)*0.002; this.vx-=(this.ux/d)*pull; this.vy-=(this.uy/d)*pull; this.vz-=(this.uz/d)*pull;}
-    this.ux+=this.vx; this.uy+=this.vy; this.uz+=this.vz;
-    this.wx+=(hash((t+this.pulsePhase)*0.003)-.5)*0.00003;
-    this.wy+=(hash((t+this.pulsePhase)*0.0031+1)-.5)*0.00003;
-    this.wz+=(hash((t+this.pulsePhase)*0.0029+2)-.5)*0.00003;
-    this.pulsePhase+=this.pulseSpeed;
-  }
-  project(ry, rx, Rv, cx, cy) {
-    const cosY=Math.cos(ry),sinY=Math.sin(ry);
-    const x1=this.ux*cosY+this.uz*sinY, y1=this.uy, z1=-this.ux*sinY+this.uz*cosY;
-    const cosX=Math.cos(rx),sinX=Math.sin(rx);
-    return { px:cx+x1*Rv, py:cy+(y1*cosX-z1*sinX)*Rv, fz:y1*sinX+z1*cosX };
-  }
-}
-
-const dots  = Array.from({length: N},       (_, i) => new Dot(i));
-const inner = Array.from({length: N_INNER}, (_, i) => new InnerDot(i));
+const dots = Array.from({length: N}, (_, i) => new Dot(i));
 
 let globalT=0, spawnClock=0;
 const SPAWN_DURATION=520;
@@ -151,16 +223,69 @@ let phase='spawn';
 // Inertia velocities for free spin after drag
 let inertiaX = 0, inertiaY = 0;
 
+function cross3(a, b) {
+  return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+}
+
+function normalize3(v) {
+  const m = Math.hypot(v.x, v.y, v.z) || 1;
+  return { x: v.x / m, y: v.y / m, z: v.z / m };
+}
+
+function rotate3(v, ry, rx) {
+  const cosY = Math.cos(ry), sinY = Math.sin(ry);
+  const x1 = v.x * cosY + v.z * sinY;
+  const y1 = v.y;
+  const z1 = -v.x * sinY + v.z * cosY;
+  const cosX = Math.cos(rx), sinX = Math.sin(rx);
+  return {
+    x: x1,
+    y: y1 * cosX - z1 * sinX,
+    z: y1 * sinX + z1 * cosX
+  };
+}
+
+function pickTopItem(x, y) {
+  for (let i = renderedItems.length - 1; i >= 0; i--) {
+    const item = renderedItems[i];
+    if (x >= item.x && x <= item.x + item.w && y >= item.y && y <= item.y + item.h) return item;
+  }
+  return null;
+}
+
+function drawSelectedPreview(item) {
+  if (!item) return;
+  const pad = 20;
+  const maxW = Math.min(320, W * 0.4);
+  const maxH = Math.min(220, H * 0.28);
+  const aspect = (item.d.media.img.naturalWidth && item.d.media.img.naturalHeight)
+    ? item.d.media.img.naturalWidth / item.d.media.img.naturalHeight
+    : item.d.media.aspect;
+  let w = maxW, h = w / aspect;
+  if (h > maxH) { h = maxH; w = h * aspect; }
+  const x = pad;
+  const y = H - h - pad;
+  ctx.save();
+  ctx.globalAlpha = 0.98;
+  if (item.d.media.img.complete) {
+    ctx.drawImage(item.d.media.img, x, y, w, h);
+  } else {
+    ctx.fillStyle = "#333";
+    ctx.fillRect(x, y, w, h);
+  }
+  ctx.restore();
+}
+
 function animate() {
   globalT++;
   ctx.clearRect(0, 0, W, H);
+  zoom += (targetZoom - zoom) * 0.14;
   const cx=W/2, cy=H/2;
-  const Rv=breathRadius(globalT);
+  const Rv=breathRadius() * zoom;
 
   if (phase==='spawn') {
     spawnClock=Math.min(1, globalT/SPAWN_DURATION);
     for(const d of dots){if(!d.alive&&d.spawnT<=spawnClock)d.alive=true; if(d.alive)d.opacity=Math.min(1,d.opacity+d.fadeSpeed);}
-    for(const d of inner){if(!d.alive&&d.spawnT<=spawnClock)d.alive=true; if(d.alive)d.opacity=Math.min(1,d.opacity+d.fadeSpeed);}
     if(spawnClock>=1&&dots.every(d=>d.opacity>=0.95))phase='rotate';
   }
 
@@ -191,34 +316,25 @@ function animate() {
 
     if(phase==='rotate'){
       for(const d of dots){d.alive=true; d.opacity=Math.min(1,d.opacity+d.fadeSpeed);}
-      for(const d of inner){d.alive=true; d.opacity=Math.min(1,d.opacity+d.fadeSpeed);}
     }
   }
 
   rotX=Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
 
-  for(const d of inner) if(d.alive) d.update(globalT);
-
   const all=[];
   for(const d of dots){
     if(!d.alive||d.opacity<=0)continue;
     const p=d.project(rotY,rotX,Rv,cx,cy,globalT);
-    all.push({type:'surface',d,...p});
-  }
-  for(const d of inner){
-    if(!d.alive||d.opacity<=0)continue;
-    const p=d.project(rotY,rotX,Rv,cx,cy);
-    all.push({type:'inner',d,...p});
+    all.push({d,...p});
   }
   all.sort((a,b)=>a.fz-b.fz);
+  renderedItems = [];
 
   for(const item of all){
-    const {d,px,py,fz}=item;
+    const {d,px,py,fz,axx,axy,bxx,bxy}=item;
     const depth=(fz+1)/2;
-    const depthSz=0.22+depth*0.78;
-    const depthAlp=item.type==='surface'
-      ? 0.06+depth*0.94
-      : (0.03+depth*0.32)*Math.max(0.1,1.3-d.ur*0.6);
+    const depthSz=0.35+depth*0.95;
+    const depthAlp=0.15+depth*0.9;
 
     d.pulsePhase+=d.pulseSpeed;
     const pulse=1+Math.sin(d.pulsePhase)*d.pulseAmt;
@@ -228,15 +344,69 @@ function animate() {
     const targetHover=dist<HOVER_RADIUS?SCALE_MAX:1.0;
     d.hoverScale+=(targetHover-d.hoverScale)*SCALE_SPEED;
 
-    const r=Math.max(0.3,d.baseSize*depthSz*pulse*d.hoverScale);
+    const isSelected = clickedId === d.id;
+    const selectedBoost = isSelected ? 1.35 : 1;
+    const imgAspect = (d.media.img.naturalWidth && d.media.img.naturalHeight)
+      ? d.media.img.naturalWidth / d.media.img.naturalHeight
+      : d.media.aspect;
+    const hPx=Math.max(26,d.baseSize*depthSz*pulse*d.hoverScale*selectedBoost*zoom);
+    const wPx=hPx*imgAspect;
     const a=d.opacity*depthAlp;
     if(a<0.008)continue;
 
-    ctx.beginPath();
-    ctx.arc(px,py,r,0,Math.PI*2);
-    ctx.fillStyle=`rgba(255,255,255,${a.toFixed(3)})`;
-    ctx.fill();
+    const front = 0.12 + depth * 0.88;
+    const ux = { x: axx * (wPx * 0.5), y: axy * (wPx * 0.5) };
+    const vy = { x: bxx * (hPx * 0.5), y: bxy * (hPx * 0.5) };
+    const srcW = d.media.img.naturalWidth || 120;
+    const srcH = d.media.img.naturalHeight || 120;
+    const minAxis = 1.5;
+    if (Math.hypot(ux.x, ux.y) < minAxis) {
+      const m = Math.hypot(ux.x, ux.y) || 1;
+      ux.x = (ux.x / m) * minAxis;
+      ux.y = (ux.y / m) * minAxis;
+    }
+    if (Math.hypot(vy.x, vy.y) < minAxis) {
+      const m = Math.hypot(vy.x, vy.y) || 1;
+      vy.x = (vy.x / m) * minAxis;
+      vy.y = (vy.y / m) * minAxis;
+    }
+
+    const tl = { x: px - ux.x - vy.x, y: py - ux.y - vy.y };
+    const tr = { x: px + ux.x - vy.x, y: py + ux.y - vy.y };
+    const bl = { x: px - ux.x + vy.x, y: py - ux.y + vy.y };
+    const br = { x: px + ux.x + vy.x, y: py + ux.y + vy.y };
+
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, a * (0.75 + front * 0.25));
+    ctx.setTransform(
+      (tr.x - tl.x) / srcW,
+      (tr.y - tl.y) / srcW,
+      (bl.x - tl.x) / srcH,
+      (bl.y - tl.y) / srcH,
+      tl.x,
+      tl.y
+    );
+    if (d.media.img.complete) {
+      ctx.drawImage(d.media.img, 0, 0);
+    } else {
+      ctx.fillStyle = `hsla(${Math.floor(hash(d.id + 2) * 360)},80%,55%,1)`;
+      ctx.fillRect(0, 0, srcW, srcH);
+    }
+    ctx.restore();
+
+    const minX = Math.min(tl.x, tr.x, bl.x, br.x);
+    const maxX = Math.max(tl.x, tr.x, bl.x, br.x);
+    const minY = Math.min(tl.y, tr.y, bl.y, br.y);
+    const maxY = Math.max(tl.y, tr.y, bl.y, br.y);
+    renderedItems.push({ d, x: minX, y: minY, w: maxX - minX, h: maxY - minY, depth, fz });
   }
+
+  hoverItem = pickTopItem(mouse.x, mouse.y);
+  if (hoverItem && !drag.active) canvas.style.cursor = "pointer";
+  else if (!drag.active) canvas.style.cursor = "grab";
+
+  const selectedItem = renderedItems.find(it => it.d.id === clickedId) || hoverItem;
+  drawSelectedPreview(selectedItem);
 
   requestAnimationFrame(animate);
 }
