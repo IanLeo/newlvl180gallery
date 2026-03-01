@@ -17,6 +17,7 @@ const N = 180, FPS = 60;
 const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
 const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
 const DEFAULT_ZOOM = 1.85;
+const AUTO_ROT_SPEED = 0.00011;
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
@@ -217,8 +218,7 @@ const dots = Array.from({length: N}, (_, i) => new Dot(i));
 
 let globalT=0, spawnClock=0;
 const SPAWN_DURATION=520;
-let rotY=0, rotX=0.28, rotSpeedY=0.00019;
-let targetSpeedY=0.00019, targetRotX=0.28;
+let rotY=0, rotX=0.28;
 let phase='spawn';
 
 // Inertia velocities for free spin after drag
@@ -277,6 +277,32 @@ function drawSelectedPreview(item) {
   ctx.restore();
 }
 
+function drawSphereEdgeBlur(cx, cy, Rv) {
+  const inner = Rv * 0.72;
+  const outer = Rv * 1.05;
+  const edgeGradient = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
+  edgeGradient.addColorStop(0, "rgba(0,0,0,0)");
+  edgeGradient.addColorStop(0.55, "rgba(0,0,0,0.02)");
+  edgeGradient.addColorStop(0.82, "rgba(0,0,0,0.14)");
+  edgeGradient.addColorStop(1, "rgba(0,0,0,0.42)");
+
+  ctx.save();
+  ctx.fillStyle = edgeGradient;
+  ctx.beginPath();
+  ctx.arc(cx, cy, outer, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Extra soft fringe to make the edge feel out-of-focus.
+  ctx.globalAlpha = 0.45;
+  ctx.filter = `blur(${Math.max(8, Math.round(Rv * 0.03))}px)`;
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = Math.max(10, Rv * 0.08);
+  ctx.beginPath();
+  ctx.arc(cx, cy, Rv * 0.97, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function animate() {
   globalT++;
   ctx.clearRect(0, 0, W, H);
@@ -301,18 +327,10 @@ function animate() {
     inertiaX *= 0.92;
     inertiaY *= 0.92;
 
-    // Auto-rotation only kicks in when inertia is nearly gone
+    // Auto-rotation: always one direction, including spawn phase.
     const inertiaStrength = Math.abs(inertiaX) + Math.abs(inertiaY);
     if (inertiaStrength < 0.0005) {
-      if (phase==='rotate') {
-        if(globalT%210===0){
-          targetSpeedY=0.00009+hash(globalT*0.017)*0.00034;
-          targetRotX=0.1+hash(globalT*0.011+3)*0.6;
-        }
-        rotSpeedY+=(targetSpeedY-rotSpeedY)*0.0015;
-        rotX+=(targetRotX-rotX)*0.0008;
-        rotY+=rotSpeedY;
-      }
+      rotY += AUTO_ROT_SPEED;
     }
 
     if(phase==='rotate'){
@@ -401,6 +419,8 @@ function animate() {
     const maxY = Math.max(tl.y, tr.y, bl.y, br.y);
     renderedItems.push({ d, x: minX, y: minY, w: maxX - minX, h: maxY - minY, depth, fz });
   }
+
+  drawSphereEdgeBlur(cx, cy, Rv);
 
   hoverItem = pickTopItem(mouse.x, mouse.y);
   if (hoverItem && !drag.active) canvas.style.cursor = "pointer";
