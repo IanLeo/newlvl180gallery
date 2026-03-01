@@ -167,25 +167,28 @@ function blurLevelForEdge(edgeT) {
 }
 
 function getBlurSource(media, level) {
-  if (level <= 0 || !media.img.complete) return media.img;
+  if (level <= 0 || !media.img.complete) return { img: media.img, pad: 0 };
   if (media.blurCache.has(level)) return media.blurCache.get(level);
 
   const w = media.img.naturalWidth || 0;
   const h = media.img.naturalHeight || 0;
-  if (!w || !h) return media.img;
+  if (!w || !h) return { img: media.img, pad: 0 };
 
   try {
+    const r = BLUR_RADII[level];
+    const pad = Math.ceil(r * 2.2);
     const c = document.createElement("canvas");
-    c.width = w;
-    c.height = h;
+    c.width = w + pad * 2;
+    c.height = h + pad * 2;
     const cctx = c.getContext("2d");
-    cctx.filter = `blur(${BLUR_RADII[level]}px)`;
-    cctx.drawImage(media.img, 0, 0, w, h);
+    cctx.filter = `blur(${r}px)`;
+    cctx.drawImage(media.img, pad, pad, w, h);
     cctx.filter = "none";
-    media.blurCache.set(level, c);
-    return c;
+    const entry = { img: c, pad };
+    media.blurCache.set(level, entry);
+    return entry;
   } catch (_) {
-    return media.img;
+    return { img: media.img, pad: 0 };
   }
 }
 
@@ -404,24 +407,36 @@ function animate() {
     const centerDist = Math.hypot(px - cx, py - cy) / Math.max(1, Rv);
     const edgeT = Math.max(0, Math.min(1, (centerDist - 0.58) / 0.34));
     const blurLevel = blurLevelForEdge(edgeT);
-    const blurSource = getBlurSource(d.media, blurLevel);
+    const blurData = getBlurSource(d.media, blurLevel);
 
     if (blurLevel > 0) {
+      const blurImg = blurData.img;
+      const blurPad = blurData.pad || 0;
+      const bw = blurImg.naturalWidth || blurImg.width || (srcW + blurPad * 2);
+      const bh = blurImg.naturalHeight || blurImg.height || (srcH + blurPad * 2);
+      const uPad = blurPad / Math.max(1, srcW);
+      const vPad = blurPad / Math.max(1, srcH);
+      const ax = { x: tr.x - tl.x, y: tr.y - tl.y };
+      const bx = { x: bl.x - tl.x, y: bl.y - tl.y };
+      const tlb = { x: tl.x - ax.x * uPad - bx.x * vPad, y: tl.y - ax.y * uPad - bx.y * vPad };
+      const trb = { x: tr.x + ax.x * uPad - bx.x * vPad, y: tr.y + ax.y * uPad - bx.y * vPad };
+      const blb = { x: bl.x - ax.x * uPad + bx.x * vPad, y: bl.y - ax.y * uPad + bx.y * vPad };
+
       ctx.save();
       ctx.globalAlpha = Math.min(1, a * (0.44 + edgeT * 0.6));
       ctx.setTransform(
-        (tr.x - tl.x) / srcW,
-        (tr.y - tl.y) / srcW,
-        (bl.x - tl.x) / srcH,
-        (bl.y - tl.y) / srcH,
-        tl.x,
-        tl.y
+        (trb.x - tlb.x) / bw,
+        (trb.y - tlb.y) / bw,
+        (blb.x - tlb.x) / bh,
+        (blb.y - tlb.y) / bh,
+        tlb.x,
+        tlb.y
       );
-      if (blurSource && blurSource.width) {
-        ctx.drawImage(blurSource, 0, 0);
+      if (blurImg && (blurImg.width || blurImg.naturalWidth)) {
+        ctx.drawImage(blurImg, 0, 0);
       } else {
         ctx.fillStyle = `hsla(${Math.floor(hash(d.id + 2) * 360)},80%,55%,1)`;
-        ctx.fillRect(0, 0, srcW, srcH);
+        ctx.fillRect(0, 0, bw, bh);
       }
       ctx.restore();
     }
