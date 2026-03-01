@@ -29,7 +29,8 @@ resize();
 window.addEventListener('resize', resize);
 
 const N = 180, FPS = 60;
-const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
+const HOVER_RADIUS = 60, SCALE_MAX = 1.5, SCALE_SPEED = 0.12;
+const HOVER_POP_SCALE = 1.12, HOVER_LIFT_PX = 20;
 const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
 const DEFAULT_ZOOM = 1.85;
 const AUTO_ROT_SPEED = 0.00011;
@@ -408,6 +409,7 @@ function animate() {
   }
   all.sort((a,b)=>a.fz-b.fz);
   renderedItems = [];
+  const drawQueue = [];
 
   for(const item of all){
     const {d,px,py,fz,axx,axy,bxx,bxy}=item;
@@ -455,21 +457,47 @@ function animate() {
     const bl = { x: px - ux.x + vy.x, y: py - ux.y + vy.y };
     const br = { x: px + ux.x + vy.x, y: py + ux.y + vy.y };
 
+    const minX = Math.min(tl.x, tr.x, bl.x, br.x);
+    const maxX = Math.max(tl.x, tr.x, bl.x, br.x);
+    const minY = Math.min(tl.y, tr.y, bl.y, br.y);
+    const maxY = Math.max(tl.y, tr.y, bl.y, br.y);
+    drawQueue.push({ d, px, py, fz, front, srcW, srcH, a, tl, tr, bl, br, minX, minY, maxX, maxY, depth });
+  }
+
+  let hoveredDrawIdx = -1;
+  for (let i = drawQueue.length - 1; i >= 0; i--) {
+    const it = drawQueue[i];
+    if (mouse.x >= it.minX && mouse.x <= it.maxX && mouse.y >= it.minY && mouse.y <= it.maxY) {
+      hoveredDrawIdx = i;
+      break;
+    }
+  }
+
+  const drawCard = (it, popped) => {
+    let tl = it.tl, tr = it.tr, bl = it.bl, br = it.br;
+    if (popped) {
+      const dm = Math.hypot(it.px - cx, it.py - cy) || 1;
+      const lx = ((it.px - cx) / dm) * HOVER_LIFT_PX;
+      const ly = ((it.py - cy) / dm) * HOVER_LIFT_PX;
+      const remap = p => ({ x: it.px + (p.x - it.px) * HOVER_POP_SCALE + lx, y: it.py + (p.y - it.py) * HOVER_POP_SCALE + ly });
+      tl = remap(tl); tr = remap(tr); bl = remap(bl); br = remap(br);
+    }
+
     ctx.save();
-    ctx.globalAlpha = Math.min(1, a * (0.75 + front * 0.25));
+    ctx.globalAlpha = Math.min(1, it.a * (0.75 + it.front * 0.25) * (popped ? 1.08 : 1));
     ctx.setTransform(
-      (tr.x - tl.x) / srcW,
-      (tr.y - tl.y) / srcW,
-      (bl.x - tl.x) / srcH,
-      (bl.y - tl.y) / srcH,
+      (tr.x - tl.x) / it.srcW,
+      (tr.y - tl.y) / it.srcW,
+      (bl.x - tl.x) / it.srcH,
+      (bl.y - tl.y) / it.srcH,
       tl.x,
       tl.y
     );
-    if (d.media.img.complete) {
-      ctx.drawImage(d.media.img, 0, 0);
+    if (it.d.media.img.complete) {
+      ctx.drawImage(it.d.media.img, 0, 0);
     } else {
-      ctx.fillStyle = `hsla(${Math.floor(hash(d.id + 2) * 360)},80%,55%,1)`;
-      ctx.fillRect(0, 0, srcW, srcH);
+      ctx.fillStyle = `hsla(${Math.floor(hash(it.d.id + 2) * 360)},80%,55%,1)`;
+      ctx.fillRect(0, 0, it.srcW, it.srcH);
     }
     ctx.restore();
 
@@ -477,8 +505,14 @@ function animate() {
     const maxX = Math.max(tl.x, tr.x, bl.x, br.x);
     const minY = Math.min(tl.y, tr.y, bl.y, br.y);
     const maxY = Math.max(tl.y, tr.y, bl.y, br.y);
-    renderedItems.push({ d, x: minX, y: minY, w: maxX - minX, h: maxY - minY, depth, fz });
+    renderedItems.push({ d: it.d, x: minX, y: minY, w: maxX - minX, h: maxY - minY, depth: it.depth, fz: it.fz });
+  };
+
+  for (let i = 0; i < drawQueue.length; i++) {
+    if (i === hoveredDrawIdx) continue;
+    drawCard(drawQueue[i], false);
   }
+  if (hoveredDrawIdx >= 0) drawCard(drawQueue[hoveredDrawIdx], true);
 
   applyViewportEdgeBlur(cx, cy, Rv);
 
