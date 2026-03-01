@@ -16,7 +16,7 @@ window.addEventListener('resize', resize);
 const N = 180, FPS = 60;
 const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
 const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
-const DEFAULT_ZOOM = 1.28;
+const DEFAULT_ZOOM = 1.23;
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
@@ -109,7 +109,7 @@ canvas.addEventListener('touchend', e => {
 function hash(n) { return ((Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1 + 1) % 1; }
 
 function breathRadius() {
-  return Math.min(W, H) * 0.36;
+  return Math.min(W, H) * 0.42;
 }
 
 function placeOnSphere(i) {
