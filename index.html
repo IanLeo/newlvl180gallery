@@ -277,32 +277,6 @@ function drawSelectedPreview(item) {
   ctx.restore();
 }
 
-function drawSphereEdgeBlur(cx, cy, Rv) {
-  const inner = Rv * 0.72;
-  const outer = Rv * 1.05;
-  const edgeGradient = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
-  edgeGradient.addColorStop(0, "rgba(0,0,0,0)");
-  edgeGradient.addColorStop(0.55, "rgba(0,0,0,0.02)");
-  edgeGradient.addColorStop(0.82, "rgba(0,0,0,0.14)");
-  edgeGradient.addColorStop(1, "rgba(0,0,0,0.42)");
-
-  ctx.save();
-  ctx.fillStyle = edgeGradient;
-  ctx.beginPath();
-  ctx.arc(cx, cy, outer, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Extra soft fringe to make the edge feel out-of-focus.
-  ctx.globalAlpha = 0.45;
-  ctx.filter = `blur(${Math.max(8, Math.round(Rv * 0.03))}px)`;
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.lineWidth = Math.max(10, Rv * 0.08);
-  ctx.beginPath();
-  ctx.arc(cx, cy, Rv * 0.97, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-}
-
 function animate() {
   globalT++;
   ctx.clearRect(0, 0, W, H);
@@ -395,8 +369,33 @@ function animate() {
     const bl = { x: px - ux.x + vy.x, y: py - ux.y + vy.y };
     const br = { x: px + ux.x + vy.x, y: py + ux.y + vy.y };
 
+    const centerDist = Math.hypot(px - cx, py - cy) / Math.max(1, Rv);
+    const edgeT = Math.max(0, Math.min(1, (centerDist - 0.72) / 0.32));
+    const edgeBlurPx = edgeT * 6.5;
+
+    if (edgeBlurPx > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, a * (0.35 + front * 0.2));
+      ctx.filter = `blur(${edgeBlurPx.toFixed(2)}px)`;
+      ctx.setTransform(
+        (tr.x - tl.x) / srcW,
+        (tr.y - tl.y) / srcW,
+        (bl.x - tl.x) / srcH,
+        (bl.y - tl.y) / srcH,
+        tl.x,
+        tl.y
+      );
+      if (d.media.img.complete) {
+        ctx.drawImage(d.media.img, 0, 0);
+      } else {
+        ctx.fillStyle = `hsla(${Math.floor(hash(d.id + 2) * 360)},80%,55%,1)`;
+        ctx.fillRect(0, 0, srcW, srcH);
+      }
+      ctx.restore();
+    }
+
     ctx.save();
-    ctx.globalAlpha = Math.min(1, a * (0.75 + front * 0.25));
+    ctx.globalAlpha = Math.min(1, a * (0.75 + front * 0.25) * (1 - edgeT * 0.28));
     ctx.setTransform(
       (tr.x - tl.x) / srcW,
       (tr.y - tl.y) / srcW,
@@ -419,8 +418,6 @@ function animate() {
     const maxY = Math.max(tl.y, tr.y, bl.y, br.y);
     renderedItems.push({ d, x: minX, y: minY, w: maxX - minX, h: maxY - minY, depth, fz });
   }
-
-  drawSphereEdgeBlur(cx, cy, Rv);
 
   hoverItem = pickTopItem(mouse.x, mouse.y);
   if (hoverItem && !drag.active) canvas.style.cursor = "pointer";
