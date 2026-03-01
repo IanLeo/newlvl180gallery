@@ -9,6 +9,8 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 let W, H;
+const EDGE_BLUR_BUFFER_SCALE = 0.28;
+const EDGE_BLUR_PX = 30;
 const edgeBlurCanvas = document.createElement("canvas");
 const edgeBlurCtx = edgeBlurCanvas.getContext("2d");
 const edgeMaskCanvas = document.createElement("canvas");
@@ -16,8 +18,8 @@ const edgeMaskCtx = edgeMaskCanvas.getContext("2d");
 function resize() {
   W = canvas.width = innerWidth;
   H = canvas.height = innerHeight;
-  const bw = Math.max(8, Math.floor(W * 0.42));
-  const bh = Math.max(8, Math.floor(H * 0.42));
+  const bw = Math.max(8, Math.floor(W * EDGE_BLUR_BUFFER_SCALE));
+  const bh = Math.max(8, Math.floor(H * EDGE_BLUR_BUFFER_SCALE));
   edgeBlurCanvas.width = bw;
   edgeBlurCanvas.height = bh;
   edgeMaskCanvas.width = W;
@@ -31,7 +33,6 @@ const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
 const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
 const DEFAULT_ZOOM = 1.85;
 const AUTO_ROT_SPEED = 0.00011;
-const EDGE_BLUR_PX = 14;
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
@@ -306,19 +307,19 @@ function applyViewportEdgeBlur(cx, cy, Rv) {
   edgeMaskCtx.clearRect(0, 0, W, H);
   edgeMaskCtx.drawImage(edgeBlurCanvas, 0, 0, W, H);
   edgeMaskCtx.globalCompositeOperation = "destination-in";
-  const inner = Rv * 0.86;
-  const outer = Rv * 1.10;
+  const inner = Rv * 0.62;
+  const outer = Rv * 0.98;
   const g = edgeMaskCtx.createRadialGradient(cx, cy, inner, cx, cy, outer);
   g.addColorStop(0, "rgba(0,0,0,0)");
-  g.addColorStop(0.55, "rgba(0,0,0,0)");
-  g.addColorStop(0.82, "rgba(0,0,0,0.58)");
-  g.addColorStop(1, "rgba(0,0,0,0.98)");
+  g.addColorStop(0.35, "rgba(0,0,0,0.16)");
+  g.addColorStop(0.62, "rgba(0,0,0,0.46)");
+  g.addColorStop(1, "rgba(0,0,0,1)");
   edgeMaskCtx.fillStyle = g;
   edgeMaskCtx.fillRect(0, 0, W, H);
   edgeMaskCtx.globalCompositeOperation = "source-over";
 
   ctx.save();
-  ctx.globalAlpha = 0.96;
+  ctx.globalAlpha = 1;
   ctx.drawImage(edgeMaskCanvas, 0, 0);
   ctx.restore();
 }
