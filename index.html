@@ -222,6 +222,7 @@ class Dot {
     this.pulseSpeed = 0.003 + hash(i * 3.3) * 0.008;
     this.pulseAmt = 0.01 + hash(i * 5.5) * 0.035;
     this.hoverScale = 1.0;
+    this.hoverPop = 0.0;
     this.media = galleryPool[i % galleryPool.length];
   }
   driftedUxyz(t) {
@@ -473,18 +474,26 @@ function animate() {
     }
   }
 
-  const drawCard = (it, popped) => {
+  for (let i = 0; i < drawQueue.length; i++) {
+    const it = drawQueue[i];
+    const targetPop = (i === hoveredDrawIdx) ? 1 : 0;
+    it.d.hoverPop += (targetPop - it.d.hoverPop) * 0.18;
+  }
+
+  const drawCard = (it, popT) => {
     let tl = it.tl, tr = it.tr, bl = it.bl, br = it.br;
-    if (popped) {
+    if (popT > 0.001) {
       const dm = Math.hypot(it.px - cx, it.py - cy) || 1;
-      const lx = ((it.px - cx) / dm) * HOVER_LIFT_PX;
-      const ly = ((it.py - cy) / dm) * HOVER_LIFT_PX;
-      const remap = p => ({ x: it.px + (p.x - it.px) * HOVER_POP_SCALE + lx, y: it.py + (p.y - it.py) * HOVER_POP_SCALE + ly });
+      const lift = HOVER_LIFT_PX * popT;
+      const sx = 1 + (HOVER_POP_SCALE - 1) * popT;
+      const lx = ((it.px - cx) / dm) * lift;
+      const ly = ((it.py - cy) / dm) * lift;
+      const remap = p => ({ x: it.px + (p.x - it.px) * sx + lx, y: it.py + (p.y - it.py) * sx + ly });
       tl = remap(tl); tr = remap(tr); bl = remap(bl); br = remap(br);
     }
 
     ctx.save();
-    ctx.globalAlpha = Math.min(1, it.a * (0.75 + it.front * 0.25) * (popped ? 1.08 : 1));
+    ctx.globalAlpha = Math.min(1, it.a * (0.75 + it.front * 0.25) * (1 + 0.08 * popT));
     ctx.setTransform(
       (tr.x - tl.x) / it.srcW,
       (tr.y - tl.y) / it.srcW,
@@ -510,9 +519,9 @@ function animate() {
 
   for (let i = 0; i < drawQueue.length; i++) {
     if (i === hoveredDrawIdx) continue;
-    drawCard(drawQueue[i], false);
+    drawCard(drawQueue[i], drawQueue[i].d.hoverPop);
   }
-  if (hoveredDrawIdx >= 0) drawCard(drawQueue[hoveredDrawIdx], true);
+  if (hoveredDrawIdx >= 0) drawCard(drawQueue[hoveredDrawIdx], drawQueue[hoveredDrawIdx].d.hoverPop);
 
   applyViewportEdgeBlur(cx, cy, Rv);
 
