@@ -33,6 +33,7 @@ const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
 const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
 const DEFAULT_ZOOM = 1.85;
 const AUTO_ROT_SPEED = 0.00011;
+const IMAGE_MANIFEST_URL = "images/manifest.json";
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
@@ -173,6 +174,35 @@ function makeGalleryPool(count) {
 }
 
 const galleryPool = makeGalleryPool(N);
+async function loadCustomImagesIntoPool(pool) {
+  try {
+    const res = await fetch(IMAGE_MANIFEST_URL, { cache: "no-store" });
+    if (!res.ok) return;
+    const raw = await res.json();
+    if (!Array.isArray(raw) || raw.length === 0) return;
+
+    const files = raw
+      .map(item => (typeof item === "string" ? { src: item } : item))
+      .filter(item => item && typeof item.src === "string" && item.src.trim().length > 0);
+    if (files.length === 0) return;
+
+    for (let i = 0; i < pool.length; i++) {
+      const src = files[i % files.length].src;
+      const entry = pool[i];
+      const img = new Image();
+      img.src = src;
+      img.onload = () => {
+        const w = img.naturalWidth || 1;
+        const h = img.naturalHeight || 1;
+        entry.aspect = w / h;
+      };
+      entry.img = img;
+    }
+  } catch (_) {
+    // Keep placeholders if manifest is missing or malformed.
+  }
+}
+loadCustomImagesIntoPool(galleryPool);
 
 class Dot {
   constructor(i) {
