@@ -18,7 +18,7 @@ const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
 const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
 const DEFAULT_ZOOM = 1.85;
 const AUTO_ROT_SPEED = 0.00011;
-const BLUR_RADII = [0, 3, 7, 12, 18];
+const BLUR_RADII = [0, 8, 16, 26, 38];
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
@@ -159,10 +159,10 @@ function makeGalleryPool(count) {
 }
 
 function blurLevelForEdge(edgeT) {
-  if (edgeT <= 0.06) return 0;
-  if (edgeT <= 0.2) return 1;
-  if (edgeT <= 0.4) return 2;
-  if (edgeT <= 0.65) return 3;
+  if (edgeT <= 0.02) return 0;
+  if (edgeT <= 0.10) return 1;
+  if (edgeT <= 0.22) return 2;
+  if (edgeT <= 0.38) return 3;
   return 4;
 }
 
@@ -405,7 +405,7 @@ function animate() {
     const br = { x: px + ux.x + vy.x, y: py + ux.y + vy.y };
 
     const centerDist = Math.hypot(px - cx, py - cy) / Math.max(1, Rv);
-    const edgeT = Math.max(0, Math.min(1, (centerDist - 0.58) / 0.34));
+    const edgeT = Math.max(0, Math.min(1, (centerDist - 0.50) / 0.24));
     const blurLevel = blurLevelForEdge(edgeT);
     const blurData = getBlurSource(d.media, blurLevel);
 
@@ -423,7 +423,7 @@ function animate() {
       const blb = { x: bl.x - ax.x * uPad + bx.x * vPad, y: bl.y - ax.y * uPad + bx.y * vPad };
 
       ctx.save();
-      ctx.globalAlpha = Math.min(1, a * (0.44 + edgeT * 0.6));
+      ctx.globalAlpha = Math.min(1, a * (0.62 + edgeT * 0.72));
       ctx.setTransform(
         (trb.x - tlb.x) / bw,
         (trb.y - tlb.y) / bw,
@@ -441,8 +441,8 @@ function animate() {
       ctx.restore();
     }
 
-    const sharpMix = 1 - edgeT * 0.82;
-    if (sharpMix > 0.06) {
+    const sharpMix = 1 - edgeT * 1.05;
+    if (sharpMix > 0.02) {
     ctx.save();
     ctx.globalAlpha = Math.min(1, a * (0.75 + front * 0.25) * sharpMix);
     ctx.setTransform(
