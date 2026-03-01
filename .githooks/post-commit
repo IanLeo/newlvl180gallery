@@ -1,0 +1,17 @@
+#!/bin/sh
+
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+
+if [ "$branch" != "main" ]; then
+  exit 0
+fi
+
+echo "[auto-push] Pushing $branch to origin..."
+git push origin "$branch"
+status=$?
+
+if [ $status -ne 0 ]; then
+  echo "[auto-push] Push failed. Run 'git push origin $branch' manually."
+fi
+
+exit 0
