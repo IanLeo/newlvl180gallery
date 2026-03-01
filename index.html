@@ -303,20 +303,29 @@ function applyViewportEdgeBlur(cx, cy, Rv) {
   edgeBlurCtx.drawImage(canvas, 0, 0, bw, bh);
   edgeBlurCtx.filter = "none";
 
-  // Create radial mask: blur only near the sphere edge.
+  // Create radial mask: blur near edge, minimal blur in the center.
+  const inner = Rv * 0.46;
+  const outer = Rv * 0.96;
+  const g = edgeMaskCtx.createRadialGradient(cx, cy, inner, cx, cy, outer);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(0.36, "rgba(0,0,0,0.18)");
+  g.addColorStop(0.68, "rgba(0,0,0,0.56)");
+  g.addColorStop(1, "rgba(0,0,0,1)");
+
+  // Build masked blurred layer.
   edgeMaskCtx.clearRect(0, 0, W, H);
   edgeMaskCtx.drawImage(edgeBlurCanvas, 0, 0, W, H);
   edgeMaskCtx.globalCompositeOperation = "destination-in";
-  const inner = Rv * 0.62;
-  const outer = Rv * 0.98;
-  const g = edgeMaskCtx.createRadialGradient(cx, cy, inner, cx, cy, outer);
-  g.addColorStop(0, "rgba(0,0,0,0)");
-  g.addColorStop(0.35, "rgba(0,0,0,0.16)");
-  g.addColorStop(0.62, "rgba(0,0,0,0.46)");
-  g.addColorStop(1, "rgba(0,0,0,1)");
   edgeMaskCtx.fillStyle = g;
   edgeMaskCtx.fillRect(0, 0, W, H);
   edgeMaskCtx.globalCompositeOperation = "source-over";
+
+  // Remove sharp pixels on the same edge mask, then draw blurred replacement.
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
 
   ctx.save();
   ctx.globalAlpha = 1;
