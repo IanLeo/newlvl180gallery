@@ -16,6 +16,7 @@ window.addEventListener('resize', resize);
 const N = 180, FPS = 60;
 const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
 const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
+const DEFAULT_ZOOM = 1.28;
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
@@ -24,7 +25,7 @@ let clickedId = null;
 let pointerDownMoved = false;
 let hoverItem = null;
 let renderedItems = [];
-let zoom = 1, targetZoom = 1;
+let zoom = DEFAULT_ZOOM, targetZoom = DEFAULT_ZOOM;
 let pinch = { active: false, startDist: 0, startZoom: 1 };
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -216,8 +217,8 @@ const dots = Array.from({length: N}, (_, i) => new Dot(i));
 
 let globalT=0, spawnClock=0;
 const SPAWN_DURATION=520;
-let rotY=0, rotX=0.28, rotSpeedY=0.0014;
-let targetSpeedY=0.0014, targetRotX=0.28;
+let rotY=0, rotX=0.28, rotSpeedY=0.00047;
+let targetSpeedY=0.00047, targetRotX=0.28;
 let phase='spawn';
 
 // Inertia velocities for free spin after drag
@@ -305,7 +306,7 @@ function animate() {
     if (inertiaStrength < 0.0005) {
       if (phase==='rotate') {
         if(globalT%210===0){
-          targetSpeedY=0.0007+hash(globalT*0.017)*0.0025;
+          targetSpeedY=0.00023+hash(globalT*0.017)*0.00084;
           targetRotX=0.1+hash(globalT*0.011+3)*0.6;
         }
         rotSpeedY+=(targetSpeedY-rotSpeedY)*0.0015;
