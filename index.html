@@ -18,6 +18,7 @@ const HOVER_RADIUS = 60, SCALE_MAX = 3.0, SCALE_SPEED = 0.12;
 const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
 const DEFAULT_ZOOM = 1.85;
 const AUTO_ROT_SPEED = 0.00011;
+const BLUR_RADII = [0, 3, 7, 12, 18];
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
@@ -153,8 +154,39 @@ function makeGalleryPool(count) {
     const img = new Image();
     const aspect = 0.55 + hash(i * 9.7 + 1.2) * 1.45;
     img.src = svgThumb(i * 17.31 + 0.4, aspect);
-    return { img, aspect };
+    return { img, aspect, blurCache: new Map() };
   });
+}
+
+function blurLevelForEdge(edgeT) {
+  if (edgeT <= 0.06) return 0;
+  if (edgeT <= 0.2) return 1;
+  if (edgeT <= 0.4) return 2;
+  if (edgeT <= 0.65) return 3;
+  return 4;
+}
+
+function getBlurSource(media, level) {
+  if (level <= 0 || !media.img.complete) return media.img;
+  if (media.blurCache.has(level)) return media.blurCache.get(level);
+
+  const w = media.img.naturalWidth || 0;
+  const h = media.img.naturalHeight || 0;
+  if (!w || !h) return media.img;
+
+  try {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const cctx = c.getContext("2d");
+    cctx.filter = `blur(${BLUR_RADII[level]}px)`;
+    cctx.drawImage(media.img, 0, 0, w, h);
+    cctx.filter = "none";
+    media.blurCache.set(level, c);
+    return c;
+  } catch (_) {
+    return media.img;
+  }
 }
 
 const galleryPool = makeGalleryPool(N);
@@ -370,13 +402,13 @@ function animate() {
     const br = { x: px + ux.x + vy.x, y: py + ux.y + vy.y };
 
     const centerDist = Math.hypot(px - cx, py - cy) / Math.max(1, Rv);
-    const edgeT = Math.max(0, Math.min(1, (centerDist - 0.72) / 0.32));
-    const edgeBlurPx = edgeT * 6.5;
+    const edgeT = Math.max(0, Math.min(1, (centerDist - 0.58) / 0.34));
+    const blurLevel = blurLevelForEdge(edgeT);
+    const blurSource = getBlurSource(d.media, blurLevel);
 
-    if (edgeBlurPx > 0.01) {
+    if (blurLevel > 0) {
       ctx.save();
-      ctx.globalAlpha = Math.min(1, a * (0.35 + front * 0.2));
-      ctx.filter = `blur(${edgeBlurPx.toFixed(2)}px)`;
+      ctx.globalAlpha = Math.min(1, a * (0.44 + edgeT * 0.6));
       ctx.setTransform(
         (tr.x - tl.x) / srcW,
         (tr.y - tl.y) / srcW,
@@ -385,8 +417,8 @@ function animate() {
         tl.x,
         tl.y
       );
-      if (d.media.img.complete) {
-        ctx.drawImage(d.media.img, 0, 0);
+      if (blurSource && blurSource.width) {
+        ctx.drawImage(blurSource, 0, 0);
       } else {
         ctx.fillStyle = `hsla(${Math.floor(hash(d.id + 2) * 360)},80%,55%,1)`;
         ctx.fillRect(0, 0, srcW, srcH);
@@ -394,8 +426,10 @@ function animate() {
       ctx.restore();
     }
 
+    const sharpMix = 1 - edgeT * 0.82;
+    if (sharpMix > 0.06) {
     ctx.save();
-    ctx.globalAlpha = Math.min(1, a * (0.75 + front * 0.25) * (1 - edgeT * 0.28));
+    ctx.globalAlpha = Math.min(1, a * (0.75 + front * 0.25) * sharpMix);
     ctx.setTransform(
       (tr.x - tl.x) / srcW,
       (tr.y - tl.y) / srcW,
@@ -411,6 +445,7 @@ function animate() {
       ctx.fillRect(0, 0, srcW, srcH);
     }
     ctx.restore();
+    }
 
     const minX = Math.min(tl.x, tr.x, bl.x, br.x);
     const maxX = Math.max(tl.x, tr.x, bl.x, br.x);
