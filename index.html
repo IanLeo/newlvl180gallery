@@ -1,7 +1,87 @@
 <!DOCTYPE html>
 <html>
 <head>
-<style>* { margin: 0; padding: 0; } body { background: #000; overflow: hidden; } canvas { display: block; cursor: grab; } canvas.dragging { cursor: grabbing; }</style>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; }
+canvas { display: block; cursor: grab; }
+canvas.dragging { cursor: grabbing; }
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  background: rgba(0, 0, 0, 0.92);
+}
+.viewer.open { display: block; }
+.viewer-main-wrap {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.viewer-main {
+  height: 100vh;
+  width: auto;
+  max-width: 96vw;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.viewer-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 132px;
+  padding: 14px 18px;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0));
+}
+.viewer-thumb {
+  flex: 0 0 auto;
+  width: 82px;
+  height: 104px;
+  border: 0;
+  background: transparent;
+  opacity: 0.62;
+  cursor: pointer;
+}
+.viewer-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.viewer-thumb.active { opacity: 1; }
+.viewer-nav {
+  position: absolute;
+  top: 0;
+  bottom: 132px;
+  width: 50%;
+  z-index: 2;
+}
+.viewer-nav-left { left: 0; }
+.viewer-nav-right { right: 0; }
+.viewer-close {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 5;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 22px;
+  background: rgba(0,0,0,0.58);
+  color: #fff;
+  font: 500 30px/44px Arial, sans-serif;
+  cursor: pointer;
+}
+</style>
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -45,6 +125,25 @@ let hoverItem = null;
 let renderedItems = [];
 let zoom = DEFAULT_ZOOM, targetZoom = DEFAULT_ZOOM;
 let pinch = { active: false, startDist: 0, startZoom: 1 };
+let viewerItems = [];
+let viewerOpen = false;
+let viewerIndex = 0;
+
+const viewerEl = document.createElement("div");
+viewerEl.className = "viewer";
+viewerEl.innerHTML = `
+  <button class="viewer-close" type="button" aria-label="Close">×</button>
+  <div class="viewer-nav viewer-nav-left"></div>
+  <div class="viewer-nav viewer-nav-right"></div>
+  <div class="viewer-main-wrap"><img class="viewer-main" alt=""></div>
+  <div class="viewer-strip"></div>
+`;
+document.body.appendChild(viewerEl);
+const viewerMain = viewerEl.querySelector(".viewer-main");
+const viewerStrip = viewerEl.querySelector(".viewer-strip");
+const viewerClose = viewerEl.querySelector(".viewer-close");
+const viewerNavLeft = viewerEl.querySelector(".viewer-nav-left");
+const viewerNavRight = viewerEl.querySelector(".viewer-nav-right");
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function touchDistance(t0, t1) { return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY); }
@@ -70,9 +169,10 @@ canvas.addEventListener('mousedown', e => {
 canvas.addEventListener('mouseup', e => {
   drag.active = false;
   canvas.classList.remove('dragging');
+  if (viewerOpen) return;
   if (!pointerDownMoved) {
     const hit = pickTopItem(e.clientX, e.clientY);
-    clickedId = hit ? hit.d.id : null;
+    if (hit) openViewerByMedia(hit.d.media);
   }
 });
 canvas.addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; drag.active = false; canvas.classList.remove('dragging'); });
@@ -118,9 +218,10 @@ canvas.addEventListener('touchmove', e => {
 canvas.addEventListener('touchend', e => {
   if (e.touches.length < 2) pinch.active = false;
   drag.active = false;
+  if (viewerOpen) return;
   if (!pointerDownMoved) {
     const hit = pickTopItem(mouse.x, mouse.y);
-    clickedId = hit ? hit.d.id : null;
+    if (hit) openViewerByMedia(hit.d.media);
   }
 });
 
@@ -175,6 +276,70 @@ function makeGalleryPool(count) {
 }
 
 const galleryPool = makeGalleryPool(N);
+function rebuildViewerItemsFromPool() {
+  const seen = new Set();
+  const list = [];
+  for (const media of galleryPool) {
+    const src = media.img && media.img.src ? media.img.src : "";
+    if (!src || seen.has(src)) continue;
+    seen.add(src);
+    list.push(media);
+  }
+  if (list.length > 0) viewerItems = list;
+}
+
+function renderViewerStrip() {
+  viewerStrip.innerHTML = "";
+  viewerItems.forEach((media, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "viewer-thumb" + (i === viewerIndex ? " active" : "");
+    const img = document.createElement("img");
+    img.src = media.img.src;
+    img.alt = "";
+    btn.appendChild(img);
+    btn.addEventListener("click", () => setViewerIndex(i));
+    viewerStrip.appendChild(btn);
+  });
+}
+
+function setViewerIndex(i) {
+  if (!viewerItems.length) return;
+  const n = viewerItems.length;
+  viewerIndex = ((i % n) + n) % n;
+  const media = viewerItems[viewerIndex];
+  viewerMain.src = media.img.src;
+  const thumbs = viewerStrip.querySelectorAll(".viewer-thumb");
+  thumbs.forEach((el, idx) => el.classList.toggle("active", idx === viewerIndex));
+  const active = thumbs[viewerIndex];
+  if (active) active.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+}
+
+function openViewerByMedia(media) {
+  if (!viewerItems.length) rebuildViewerItemsFromPool();
+  if (!viewerItems.length) return;
+  const src = media && media.img ? media.img.src : "";
+  const idx = Math.max(0, viewerItems.findIndex(it => it.img.src === src));
+  viewerOpen = true;
+  viewerEl.classList.add("open");
+  renderViewerStrip();
+  setViewerIndex(idx);
+}
+
+function closeViewer() {
+  viewerOpen = false;
+  viewerEl.classList.remove("open");
+}
+
+viewerClose.addEventListener("click", closeViewer);
+viewerNavLeft.addEventListener("click", () => setViewerIndex(viewerIndex - 1));
+viewerNavRight.addEventListener("click", () => setViewerIndex(viewerIndex + 1));
+window.addEventListener("keydown", e => {
+  if (!viewerOpen) return;
+  if (e.key === "Escape") closeViewer();
+  else if (e.key === "ArrowLeft") setViewerIndex(viewerIndex - 1);
+  else if (e.key === "ArrowRight") setViewerIndex(viewerIndex + 1);
+});
 async function loadCustomImagesIntoPool(pool) {
   try {
     const res = await fetch(IMAGE_MANIFEST_URL, { cache: "no-store" });
@@ -186,6 +351,18 @@ async function loadCustomImagesIntoPool(pool) {
       .map(item => (typeof item === "string" ? { src: item } : item))
       .filter(item => item && typeof item.src === "string" && item.src.trim().length > 0);
     if (files.length === 0) return;
+
+    const customViewerItems = files.map(file => {
+      const img = new Image();
+      const media = { img, aspect: 1 };
+      img.src = file.src;
+      img.onload = () => {
+        const w = img.naturalWidth || 1;
+        const h = img.naturalHeight || 1;
+        media.aspect = w / h;
+      };
+      return media;
+    });
 
     for (let i = 0; i < pool.length; i++) {
       const src = files[i % files.length].src;
@@ -199,11 +376,13 @@ async function loadCustomImagesIntoPool(pool) {
       };
       entry.img = img;
     }
+    if (customViewerItems.length > 0) viewerItems = customViewerItems;
   } catch (_) {
     // Keep placeholders if manifest is missing or malformed.
   }
 }
 loadCustomImagesIntoPool(galleryPool);
+rebuildViewerItemsFromPool();
 
 class Dot {
   constructor(i) {
@@ -367,6 +546,10 @@ function applyViewportEdgeBlur(cx, cy, Rv) {
 
 function animate() {
   globalT++;
+  if (viewerOpen) {
+    requestAnimationFrame(animate);
+    return;
+  }
   ctx.clearRect(0, 0, W, H);
   zoom += (targetZoom - zoom) * 0.14;
   const cx=W/2, cy=H/2;
