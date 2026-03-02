@@ -199,6 +199,8 @@ let modeMorphScrollY = 0;
 let lastGridScrollY = 0;
 let gridOrderIds = [];
 let morphOrderIds = null;
+let morphGridSrcOrder = null;
+let pendingGridOrderBuild = false;
 
 const viewerEl = document.createElement("div");
 viewerEl.className = "viewer";
@@ -373,6 +375,13 @@ function rebuildViewerItemsFromPool() {
   if (list.length > 0) viewerItems = list;
 }
 
+function getOrderedGridItems() {
+  if (!morphGridSrcOrder || !morphGridSrcOrder.length) return viewerItems;
+  const bySrc = new Map(viewerItems.map(m => [m.img.src, m]));
+  const ordered = morphGridSrcOrder.map(src => bySrc.get(src)).filter(Boolean);
+  return ordered.length ? ordered : viewerItems;
+}
+
 function buildMasonryLayout(count, getAspect, scrollY = 0, ids = null) {
   const cols = GRID_COLS;
   const gap = GRID_GAP;
@@ -398,13 +407,14 @@ function buildMasonryLayout(count, getAspect, scrollY = 0, ids = null) {
 
 function renderGridMode() {
   gridWrap.innerHTML = "";
+  const items = getOrderedGridItems();
   const { rects, contentHeight } = buildMasonryLayout(
-    viewerItems.length,
-    i => viewerItems[i].aspect,
+    items.length,
+    i => items[i].aspect,
     0
   );
   gridWrap.style.height = `${Math.max(0, contentHeight)}px`;
-  viewerItems.forEach((media, i) => {
+  items.forEach((media, i) => {
     const r = rects[i];
     const btn = document.createElement("button");
     btn.type = "button";
@@ -461,7 +471,11 @@ function startModeTransition(target) {
   modeMorphTo = target === "grid" ? 1 : 0;
   modeMorphStartMs = performance.now();
   modeMorphScrollY = target === "sphere" ? window.scrollY : 0;
-  if (target === "grid") morphOrderIds = null;
+  if (target === "grid") {
+    morphOrderIds = null;
+    morphGridSrcOrder = null;
+    pendingGridOrderBuild = true;
+  }
   if (target === "sphere" && gridOrderIds.length) morphOrderIds = [...gridOrderIds];
 
   if (target === "sphere") {
@@ -799,6 +813,19 @@ function buildMorphGridRectById(drawQueue, scrollY) {
   return rectById;
 }
 
+function buildMorphOrderFromFront(drawQueue) {
+  const bestBySrc = new Map();
+  for (const it of drawQueue) {
+    const src = it.d.media.img && it.d.media.img.src ? it.d.media.img.src : "";
+    if (!src) continue;
+    const prev = bestBySrc.get(src);
+    if (!prev || it.fz > prev.fz) bestBySrc.set(src, it);
+  }
+  const anchors = [...bestBySrc.values()].sort((a, b) => b.fz - a.fz);
+  morphOrderIds = anchors.map(it => it.d.id);
+  morphGridSrcOrder = anchors.map(it => it.d.media.img.src);
+}
+
 function applyViewportEdgeBlur(cx, cy, Rv) {
   const bw = edgeBlurCanvas.width;
   const bh = edgeBlurCanvas.height;
@@ -978,6 +1005,11 @@ function animate() {
     it.d.hoverPop += (targetPop - it.d.hoverPop) * 0.18;
   }
 
+  if (pendingGridOrderBuild && drawQueue.length) {
+    buildMorphOrderFromFront(drawQueue);
+    pendingGridOrderBuild = false;
+  }
+
   const morphRectById = modeMorph > 0.001
     ? buildMorphGridRectById(drawQueue, modeMorphScrollY)
     : null;
@@ -1014,6 +1046,8 @@ function animate() {
       tr = { x: lerp(tr.x, gtr.x), y: lerp(tr.y, gtr.y) };
       bl = { x: lerp(bl.x, gbl.x), y: lerp(bl.y, gbl.y) };
       br = { x: lerp(br.x, gbr.x), y: lerp(br.y, gbr.y) };
+      } else {
+      morphAlpha = Math.max(0, 1 - modeMorph * 1.45);
       }
     }
 
