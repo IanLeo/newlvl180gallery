@@ -90,7 +90,7 @@ canvas.dragging { cursor: grabbing; }
   position: fixed;
   z-index: 50;
   pointer-events: none;
-  object-fit: cover;
+  transform-origin: 0 0;
   display: none;
 }
 </style>
@@ -131,7 +131,6 @@ const IMAGE_MANIFEST_URL = "images/manifest.json";
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
 let drag = { active: false, lastX: 0, lastY: 0, velX: 0, velY: 0 };
-let clickedId = null;
 let pointerDownMoved = false;
 let hoverItem = null;
 let renderedItems = [];
@@ -351,33 +350,65 @@ function getViewerTargetRect(media) {
   return { x, y, w, h };
 }
 
+function waitForViewerMain(src) {
+  return new Promise(resolve => {
+    if (viewerMain.src !== src) viewerMain.src = src;
+    if (viewerMain.complete) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      viewerMain.removeEventListener("load", done);
+      viewerMain.removeEventListener("error", done);
+      resolve();
+    };
+    viewerMain.addEventListener("load", done, { once: true });
+    viewerMain.addEventListener("error", done, { once: true });
+  });
+}
+
+function matrixForQuad(quad, srcW, srcH) {
+  const a = (quad.tr.x - quad.tl.x) / srcW;
+  const b = (quad.tr.y - quad.tl.y) / srcW;
+  const c = (quad.bl.x - quad.tl.x) / srcH;
+  const d = (quad.bl.y - quad.tl.y) / srcH;
+  const tx = quad.tl.x;
+  const ty = quad.tl.y;
+  return `matrix(${a}, ${b}, ${c}, ${d}, ${tx}, ${ty})`;
+}
+
 function animateViewerOpen(media, sourceBox) {
   return new Promise(resolve => {
-    if (!sourceBox || sourceBox.w <= 0 || sourceBox.h <= 0) {
+    if (!sourceBox || !sourceBox.tl || !sourceBox.tr || !sourceBox.bl) {
       resolve();
       return;
     }
     const to = getViewerTargetRect(media);
+    const srcW = sourceBox.srcW || (media.img.naturalWidth || 120);
+    const srcH = sourceBox.srcH || (media.img.naturalHeight || 120);
+    const fromQuad = { tl: sourceBox.tl, tr: sourceBox.tr, bl: sourceBox.bl };
+    const toQuad = {
+      tl: { x: to.x, y: to.y },
+      tr: { x: to.x + to.w, y: to.y },
+      bl: { x: to.x, y: to.y + to.h }
+    };
     viewerTransit.src = media.img.src;
     viewerTransit.style.display = "block";
     viewerTransit.style.transition = "none";
-    viewerTransit.style.left = `${sourceBox.x}px`;
-    viewerTransit.style.top = `${sourceBox.y}px`;
-    viewerTransit.style.width = `${sourceBox.w}px`;
-    viewerTransit.style.height = `${sourceBox.h}px`;
+    viewerTransit.style.left = "0px";
+    viewerTransit.style.top = "0px";
+    viewerTransit.style.width = `${srcW}px`;
+    viewerTransit.style.height = `${srcH}px`;
+    viewerTransit.style.transform = matrixForQuad(fromQuad, srcW, srcH);
     viewerTransit.style.opacity = "1";
 
     requestAnimationFrame(() => {
-      viewerTransit.style.transition = "left 320ms ease, top 320ms ease, width 320ms ease, height 320ms ease, opacity 320ms ease";
-      viewerTransit.style.left = `${to.x}px`;
-      viewerTransit.style.top = `${to.y}px`;
-      viewerTransit.style.width = `${to.w}px`;
-      viewerTransit.style.height = `${to.h}px`;
+      viewerTransit.style.transition = "transform 360ms ease, opacity 180ms ease";
+      viewerTransit.style.transform = matrixForQuad(toQuad, srcW, srcH);
       viewerTransit.style.opacity = "1";
       setTimeout(() => {
-        viewerTransit.style.display = "none";
         resolve();
-      }, 330);
+      }, 370);
     });
   });
 }
@@ -395,9 +426,18 @@ async function openViewerByMedia(media, sourceBox) {
   viewerStrip.style.opacity = "0";
   renderViewerStrip();
   setViewerIndex(idx);
-  await animateViewerOpen(media, sourceBox);
+  const mainReady = waitForViewerMain(viewerItems[idx].img.src);
+  await Promise.all([animateViewerOpen(media, sourceBox), mainReady]);
   viewerMain.style.opacity = "1";
   viewerStrip.style.opacity = "1";
+  requestAnimationFrame(() => {
+    viewerTransit.style.transition = "opacity 140ms ease";
+    viewerTransit.style.opacity = "0";
+    setTimeout(() => {
+      viewerTransit.style.display = "none";
+      viewerTransit.style.opacity = "1";
+    }, 150);
+  });
   viewerAnimating = false;
 }
 
@@ -557,29 +597,6 @@ function pickTopItem(x, y) {
   return null;
 }
 
-function drawSelectedPreview(item) {
-  if (!item) return;
-  const pad = 20;
-  const maxW = Math.min(320, W * 0.4);
-  const maxH = Math.min(220, H * 0.28);
-  const aspect = (item.d.media.img.naturalWidth && item.d.media.img.naturalHeight)
-    ? item.d.media.img.naturalWidth / item.d.media.img.naturalHeight
-    : item.d.media.aspect;
-  let w = maxW, h = w / aspect;
-  if (h > maxH) { h = maxH; w = h * aspect; }
-  const x = pad;
-  const y = H - h - pad;
-  ctx.save();
-  ctx.globalAlpha = 0.98;
-  if (item.d.media.img.complete) {
-    ctx.drawImage(item.d.media.img, x, y, w, h);
-  } else {
-    ctx.fillStyle = "#333";
-    ctx.fillRect(x, y, w, h);
-  }
-  ctx.restore();
-}
-
 function applyViewportEdgeBlur(cx, cy, Rv) {
   const bw = edgeBlurCanvas.width;
   const bh = edgeBlurCanvas.height;
@@ -686,12 +703,10 @@ function animate() {
     const targetHover=dist<HOVER_RADIUS?SCALE_MAX:1.0;
     d.hoverScale+=(targetHover-d.hoverScale)*SCALE_SPEED;
 
-    const isSelected = clickedId === d.id;
-    const selectedBoost = isSelected ? 1.35 : 1;
     const imgAspect = (d.media.img.naturalWidth && d.media.img.naturalHeight)
       ? d.media.img.naturalWidth / d.media.img.naturalHeight
       : d.media.aspect;
-    const hPx=Math.max(26,d.baseSize*depthSz*pulse*d.hoverScale*selectedBoost*zoom);
+    const hPx=Math.max(26,d.baseSize*depthSz*pulse*d.hoverScale*zoom);
     const wPx=hPx*imgAspect;
     const a=d.opacity*depthAlp;
     if(a<0.008)continue;
@@ -774,7 +789,20 @@ function animate() {
     const maxX = Math.max(tl.x, tr.x, bl.x, br.x);
     const minY = Math.min(tl.y, tr.y, bl.y, br.y);
     const maxY = Math.max(tl.y, tr.y, bl.y, br.y);
-    renderedItems.push({ d: it.d, x: minX, y: minY, w: maxX - minX, h: maxY - minY, depth: it.depth, fz: it.fz });
+    renderedItems.push({
+      d: it.d,
+      x: minX,
+      y: minY,
+      w: maxX - minX,
+      h: maxY - minY,
+      depth: it.depth,
+      fz: it.fz,
+      tl,
+      tr,
+      bl,
+      srcW: it.srcW,
+      srcH: it.srcH
+    });
   };
 
   for (let i = 0; i < drawQueue.length; i++) {
@@ -788,9 +816,6 @@ function animate() {
   hoverItem = pickTopItem(mouse.x, mouse.y);
   if (hoverItem && !drag.active) canvas.style.cursor = "pointer";
   else if (!drag.active) canvas.style.cursor = "grab";
-
-  const selectedItem = renderedItems.find(it => it.d.id === clickedId) || hoverItem;
-  drawSelectedPreview(selectedItem);
 
   requestAnimationFrame(animate);
 }
