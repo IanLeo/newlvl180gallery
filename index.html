@@ -11,10 +11,13 @@ canvas.dragging { cursor: grabbing; }
   position: fixed;
   inset: 0;
   z-index: 30;
-  display: none;
+  display: block;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease;
   background: rgba(0, 0, 0, 0.92);
 }
-.viewer.open { display: block; }
+.viewer.open { pointer-events: auto; opacity: 1; }
 .viewer-main-wrap {
   position: absolute;
   inset: 0;
@@ -29,6 +32,7 @@ canvas.dragging { cursor: grabbing; }
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
+  transition: opacity 180ms ease;
 }
 .viewer-strip {
   position: absolute;
@@ -42,6 +46,7 @@ canvas.dragging { cursor: grabbing; }
   overflow-x: auto;
   overflow-y: hidden;
   background: linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0));
+  transition: opacity 180ms ease;
 }
 .viewer-thumb {
   flex: 0 0 auto;
@@ -80,6 +85,13 @@ canvas.dragging { cursor: grabbing; }
   color: #fff;
   font: 500 30px/44px Arial, sans-serif;
   cursor: pointer;
+}
+.viewer-transit {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  object-fit: cover;
+  display: none;
 }
 </style>
 </head>
@@ -128,6 +140,7 @@ let pinch = { active: false, startDist: 0, startZoom: 1 };
 let viewerItems = [];
 let viewerOpen = false;
 let viewerIndex = 0;
+let viewerAnimating = false;
 
 const viewerEl = document.createElement("div");
 viewerEl.className = "viewer";
@@ -144,6 +157,9 @@ const viewerStrip = viewerEl.querySelector(".viewer-strip");
 const viewerClose = viewerEl.querySelector(".viewer-close");
 const viewerNavLeft = viewerEl.querySelector(".viewer-nav-left");
 const viewerNavRight = viewerEl.querySelector(".viewer-nav-right");
+const viewerTransit = document.createElement("img");
+viewerTransit.className = "viewer-transit";
+document.body.appendChild(viewerTransit);
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function touchDistance(t0, t1) { return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY); }
@@ -172,7 +188,7 @@ canvas.addEventListener('mouseup', e => {
   if (viewerOpen) return;
   if (!pointerDownMoved) {
     const hit = pickTopItem(e.clientX, e.clientY);
-    if (hit) openViewerByMedia(hit.d.media);
+    if (hit) openViewerByMedia(hit.d.media, hit);
   }
 });
 canvas.addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; drag.active = false; canvas.classList.remove('dragging'); });
@@ -221,7 +237,7 @@ canvas.addEventListener('touchend', e => {
   if (viewerOpen) return;
   if (!pointerDownMoved) {
     const hit = pickTopItem(mouse.x, mouse.y);
-    if (hit) openViewerByMedia(hit.d.media);
+    if (hit) openViewerByMedia(hit.d.media, hit);
   }
 });
 
@@ -315,20 +331,81 @@ function setViewerIndex(i) {
   if (active) active.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
 }
 
-function openViewerByMedia(media) {
+function getMediaAspect(media) {
+  if (!media || !media.img) return 1;
+  const w = media.img.naturalWidth || 1;
+  const h = media.img.naturalHeight || 1;
+  return w / h;
+}
+
+function getViewerTargetRect(media) {
+  const vw = innerWidth;
+  const vh = innerHeight;
+  const aspect = getMediaAspect(media);
+  const maxW = vw * 0.96;
+  const wByHeight = vh * aspect;
+  const w = Math.min(maxW, wByHeight);
+  const h = w / aspect;
+  const x = (vw - w) * 0.5;
+  const y = (vh - h) * 0.5;
+  return { x, y, w, h };
+}
+
+function animateViewerOpen(media, sourceBox) {
+  return new Promise(resolve => {
+    if (!sourceBox || sourceBox.w <= 0 || sourceBox.h <= 0) {
+      resolve();
+      return;
+    }
+    const to = getViewerTargetRect(media);
+    viewerTransit.src = media.img.src;
+    viewerTransit.style.display = "block";
+    viewerTransit.style.transition = "none";
+    viewerTransit.style.left = `${sourceBox.x}px`;
+    viewerTransit.style.top = `${sourceBox.y}px`;
+    viewerTransit.style.width = `${sourceBox.w}px`;
+    viewerTransit.style.height = `${sourceBox.h}px`;
+    viewerTransit.style.opacity = "1";
+
+    requestAnimationFrame(() => {
+      viewerTransit.style.transition = "left 320ms ease, top 320ms ease, width 320ms ease, height 320ms ease, opacity 320ms ease";
+      viewerTransit.style.left = `${to.x}px`;
+      viewerTransit.style.top = `${to.y}px`;
+      viewerTransit.style.width = `${to.w}px`;
+      viewerTransit.style.height = `${to.h}px`;
+      viewerTransit.style.opacity = "1";
+      setTimeout(() => {
+        viewerTransit.style.display = "none";
+        resolve();
+      }, 330);
+    });
+  });
+}
+
+async function openViewerByMedia(media, sourceBox) {
+  if (viewerAnimating) return;
   if (!viewerItems.length) rebuildViewerItemsFromPool();
   if (!viewerItems.length) return;
   const src = media && media.img ? media.img.src : "";
   const idx = Math.max(0, viewerItems.findIndex(it => it.img.src === src));
+  viewerAnimating = true;
   viewerOpen = true;
   viewerEl.classList.add("open");
+  viewerMain.style.opacity = "0";
+  viewerStrip.style.opacity = "0";
   renderViewerStrip();
   setViewerIndex(idx);
+  await animateViewerOpen(media, sourceBox);
+  viewerMain.style.opacity = "1";
+  viewerStrip.style.opacity = "1";
+  viewerAnimating = false;
 }
 
 function closeViewer() {
   viewerOpen = false;
   viewerEl.classList.remove("open");
+  viewerTransit.style.display = "none";
+  viewerAnimating = false;
 }
 
 viewerClose.addEventListener("click", closeViewer);
