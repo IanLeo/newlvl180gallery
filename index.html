@@ -4,7 +4,7 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #000; overflow: hidden; }
-canvas { display: block; cursor: grab; }
+canvas { display: block; cursor: grab; position: fixed; inset: 0; z-index: 3; }
 canvas.dragging { cursor: grabbing; }
 
 .viewer {
@@ -93,6 +93,49 @@ canvas.dragging { cursor: grabbing; }
   transform-origin: 0 0;
   display: none;
 }
+
+.mode-toggle {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 24;
+  border: 0;
+  border-radius: 18px;
+  padding: 10px 14px;
+  background: rgba(0,0,0,0.58);
+  color: #fff;
+  font: 600 13px/1 Arial, sans-serif;
+  cursor: pointer;
+}
+
+.grid-mode {
+  position: relative;
+  z-index: 2;
+  min-height: 100vh;
+  display: none;
+  opacity: 0;
+  transition: opacity 280ms ease;
+  padding: 74px 22px 28px;
+}
+.grid-mode.open {
+  display: block;
+  opacity: 1;
+}
+.grid-wrap {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+.grid-item {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.grid-item img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
 </style>
 </head>
 <body>
@@ -140,6 +183,14 @@ let viewerItems = [];
 let viewerOpen = false;
 let viewerIndex = 0;
 let viewerAnimating = false;
+let viewMode = "sphere";
+let modeMorph = 0;
+let modeMorphFrom = 0;
+let modeMorphTo = 0;
+let modeMorphStartMs = 0;
+let modeMorphDurationMs = 560;
+let modeMorphScrollY = 0;
+let lastGridScrollY = 0;
 
 const viewerEl = document.createElement("div");
 viewerEl.className = "viewer";
@@ -159,6 +210,18 @@ const viewerNavRight = viewerEl.querySelector(".viewer-nav-right");
 const viewerTransit = document.createElement("img");
 viewerTransit.className = "viewer-transit";
 document.body.appendChild(viewerTransit);
+
+const modeToggle = document.createElement("button");
+modeToggle.className = "mode-toggle";
+modeToggle.type = "button";
+modeToggle.textContent = "Grid";
+document.body.appendChild(modeToggle);
+
+const gridMode = document.createElement("section");
+gridMode.className = "grid-mode";
+gridMode.innerHTML = `<div class="grid-wrap"></div>`;
+document.body.appendChild(gridMode);
+const gridWrap = gridMode.querySelector(".grid-wrap");
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function touchDistance(t0, t1) { return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY); }
@@ -300,6 +363,75 @@ function rebuildViewerItemsFromPool() {
     list.push(media);
   }
   if (list.length > 0) viewerItems = list;
+}
+
+function renderGridMode() {
+  gridWrap.innerHTML = "";
+  viewerItems.forEach((media, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "grid-item";
+    const img = document.createElement("img");
+    img.src = media.img.src;
+    img.alt = "";
+    btn.appendChild(img);
+    btn.addEventListener("click", () => {
+      const r = img.getBoundingClientRect();
+      const box = {
+        x: r.left, y: r.top, w: r.width, h: r.height,
+        tl: { x: r.left, y: r.top },
+        tr: { x: r.right, y: r.top },
+        bl: { x: r.left, y: r.bottom },
+        srcW: media.img.naturalWidth || 120,
+        srcH: media.img.naturalHeight || 120
+      };
+      openViewerByMedia(media, box);
+    });
+    gridWrap.appendChild(btn);
+  });
+}
+
+function setSphereLayoutMode() {
+  canvas.style.opacity = "1";
+  canvas.style.pointerEvents = "auto";
+  gridMode.classList.remove("open");
+  document.body.style.overflow = "hidden";
+  window.scrollTo(0, 0);
+  modeToggle.textContent = "Grid";
+}
+
+function setGridLayoutMode() {
+  renderGridMode();
+  gridMode.classList.add("open");
+  canvas.style.opacity = "0";
+  canvas.style.pointerEvents = "none";
+  document.body.style.overflow = "auto";
+  window.scrollTo(0, lastGridScrollY);
+  modeToggle.textContent = "Sphere";
+}
+
+function startModeTransition(target) {
+  if (viewerOpen || viewerAnimating) return;
+  if (target === "grid" && viewMode === "grid") return;
+  if (target === "sphere" && viewMode === "sphere") return;
+
+  modeMorphFrom = modeMorph;
+  modeMorphTo = target === "grid" ? 1 : 0;
+  modeMorphStartMs = performance.now();
+  modeMorphScrollY = target === "sphere" ? window.scrollY : 0;
+
+  if (target === "sphere") {
+    lastGridScrollY = window.scrollY;
+    gridMode.classList.remove("open");
+    document.body.style.overflow = "hidden";
+    canvas.style.opacity = "1";
+    canvas.style.pointerEvents = "auto";
+  } else {
+    canvas.style.opacity = "1";
+    canvas.style.pointerEvents = "none";
+    document.body.style.overflow = "hidden";
+    window.scrollTo(0, 0);
+  }
 }
 
 function renderViewerStrip() {
@@ -450,6 +582,9 @@ function closeViewer() {
 viewerClose.addEventListener("click", closeViewer);
 viewerNavLeft.addEventListener("click", () => setViewerIndex(viewerIndex - 1));
 viewerNavRight.addEventListener("click", () => setViewerIndex(viewerIndex + 1));
+modeToggle.addEventListener("click", () => {
+  startModeTransition(viewMode === "sphere" ? "grid" : "sphere");
+});
 window.addEventListener("keydown", e => {
   if (!viewerOpen) return;
   if (e.key === "Escape") closeViewer();
@@ -493,12 +628,14 @@ async function loadCustomImagesIntoPool(pool) {
       entry.img = img;
     }
     if (customViewerItems.length > 0) viewerItems = customViewerItems;
+    if (viewMode === "grid") renderGridMode();
   } catch (_) {
     // Keep placeholders if manifest is missing or malformed.
   }
 }
 loadCustomImagesIntoPool(galleryPool);
 rebuildViewerItemsFromPool();
+setSphereLayoutMode();
 
 class Dot {
   constructor(i) {
@@ -596,6 +733,20 @@ function pickTopItem(x, y) {
   return null;
 }
 
+function getGridRectForIndex(index, aspect, scrollY) {
+  const cols = 5;
+  const pad = 22;
+  const gap = 12;
+  const avail = Math.max(100, W - pad * 2 - gap * (cols - 1));
+  const cellW = avail / cols;
+  const cellH = cellW / Math.max(0.2, aspect || 1);
+  const col = index % cols;
+  const row = Math.floor(index / cols);
+  const x = pad + col * (cellW + gap);
+  const y = 74 + row * (cellH + gap) - scrollY;
+  return { x, y, w: cellW, h: cellH };
+}
+
 function applyViewportEdgeBlur(cx, cy, Rv) {
   const bw = edgeBlurCanvas.width;
   const bh = edgeBlurCanvas.height;
@@ -639,7 +790,23 @@ function applyViewportEdgeBlur(cx, cy, Rv) {
 
 function animate() {
   globalT++;
+  if (modeMorph !== modeMorphTo) {
+    const t = Math.min(1, (performance.now() - modeMorphStartMs) / modeMorphDurationMs);
+    const eased = 1 - Math.pow(1 - t, 3);
+    modeMorph = modeMorphFrom + (modeMorphTo - modeMorphFrom) * eased;
+    if (t >= 1) {
+      modeMorph = modeMorphTo;
+      viewMode = modeMorphTo >= 0.5 ? "grid" : "sphere";
+      if (viewMode === "grid") setGridLayoutMode();
+      else setSphereLayoutMode();
+    }
+  }
+
   if (viewerOpen) {
+    requestAnimationFrame(animate);
+    return;
+  }
+  if (viewMode === "grid" && modeMorph >= 1) {
     requestAnimationFrame(animate);
     return;
   }
@@ -688,7 +855,8 @@ function animate() {
   renderedItems = [];
   const drawQueue = [];
 
-  for(const item of all){
+  for(let itemIndex = 0; itemIndex < all.length; itemIndex++){
+    const item = all[itemIndex];
     const {d,px,py,fz,axx,axy,bxx,bxy}=item;
     if (!d.media.img.complete || !d.media.img.naturalWidth || !d.media.img.naturalHeight) continue;
     const depth=(fz+1)/2;
@@ -737,7 +905,7 @@ function animate() {
     const maxX = Math.max(tl.x, tr.x, bl.x, br.x);
     const minY = Math.min(tl.y, tr.y, bl.y, br.y);
     const maxY = Math.max(tl.y, tr.y, bl.y, br.y);
-    drawQueue.push({ d, px, py, fz, front, srcW, srcH, a, tl, tr, bl, br, minX, minY, maxX, maxY, depth });
+    drawQueue.push({ d, px, py, fz, front, srcW, srcH, a, tl, tr, bl, br, minX, minY, maxX, maxY, depth, itemIndex });
   }
 
   let hoveredDrawIdx = -1;
@@ -765,6 +933,20 @@ function animate() {
       const ly = ((it.py - cy) / dm) * lift;
       const remap = p => ({ x: it.px + (p.x - it.px) * sx + lx, y: it.py + (p.y - it.py) * sx + ly });
       tl = remap(tl); tr = remap(tr); bl = remap(bl); br = remap(br);
+    }
+
+    if (modeMorph > 0.001) {
+      const aspect = it.srcW / Math.max(1, it.srcH);
+      const gr = getGridRectForIndex(it.itemIndex, aspect, modeMorphScrollY);
+      const gtl = { x: gr.x, y: gr.y };
+      const gtr = { x: gr.x + gr.w, y: gr.y };
+      const gbl = { x: gr.x, y: gr.y + gr.h };
+      const gbr = { x: gr.x + gr.w, y: gr.y + gr.h };
+      const lerp = (a, b) => a + (b - a) * modeMorph;
+      tl = { x: lerp(tl.x, gtl.x), y: lerp(tl.y, gtl.y) };
+      tr = { x: lerp(tr.x, gtr.x), y: lerp(tr.y, gtr.y) };
+      bl = { x: lerp(bl.x, gbl.x), y: lerp(bl.y, gbl.y) };
+      br = { x: lerp(br.x, gbr.x), y: lerp(br.y, gbr.y) };
     }
 
     ctx.save();
@@ -806,7 +988,7 @@ function animate() {
   }
   if (hoveredDrawIdx >= 0) drawCard(drawQueue[hoveredDrawIdx], drawQueue[hoveredDrawIdx].d.hoverPop);
 
-  applyViewportEdgeBlur(cx, cy, Rv);
+  if (modeMorph < 0.95) applyViewportEdgeBlur(cx, cy, Rv);
 
   hoverItem = pickTopItem(mouse.x, mouse.y);
   if (hoverItem && !drag.active) canvas.style.cursor = "pointer";
