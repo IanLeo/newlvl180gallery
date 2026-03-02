@@ -284,8 +284,7 @@ function svgThumb(seed, aspect) {
 function makeGalleryPool(count) {
   return Array.from({ length: count }, (_, i) => {
     const img = new Image();
-    const aspect = 0.55 + hash(i * 9.7 + 1.2) * 1.45;
-    img.src = svgThumb(i * 17.31 + 0.4, aspect);
+    const aspect = 1;
     return { img, aspect };
   });
 }
@@ -691,6 +690,7 @@ function animate() {
 
   for(const item of all){
     const {d,px,py,fz,axx,axy,bxx,bxy}=item;
+    if (!d.media.img.complete || !d.media.img.naturalWidth || !d.media.img.naturalHeight) continue;
     const depth=(fz+1)/2;
     const depthSz=0.35+depth*0.95;
     const depthAlp=0.15+depth*0.9;
@@ -777,12 +777,7 @@ function animate() {
       tl.x,
       tl.y
     );
-    if (it.d.media.img.complete) {
-      ctx.drawImage(it.d.media.img, 0, 0);
-    } else {
-      ctx.fillStyle = `hsla(${Math.floor(hash(it.d.id + 2) * 360)},80%,55%,1)`;
-      ctx.fillRect(0, 0, it.srcW, it.srcH);
-    }
+    ctx.drawImage(it.d.media.img, 0, 0);
     ctx.restore();
 
     const minX = Math.min(tl.x, tr.x, bl.x, br.x);
