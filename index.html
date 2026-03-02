@@ -4,7 +4,7 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #000; overflow: hidden; }
-canvas { display: block; cursor: grab; position: fixed; inset: 0; z-index: 3; }
+canvas { display: block; cursor: grab; position: fixed; inset: 0; z-index: 3; opacity: 1; transition: opacity 320ms ease; }
 canvas.dragging { cursor: grabbing; }
 
 .viewer {
@@ -112,13 +112,15 @@ canvas.dragging { cursor: grabbing; }
   position: relative;
   z-index: 2;
   min-height: 100vh;
-  display: none;
+  display: block;
+  visibility: visible;
+  pointer-events: none;
   opacity: 0;
-  transition: opacity 280ms ease;
+  transition: opacity 320ms ease;
   padding: 74px 20px 20px;
 }
 .grid-mode.open {
-  display: block;
+  pointer-events: auto;
   opacity: 1;
 }
 .grid-wrap {
