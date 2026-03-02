@@ -196,7 +196,6 @@ let modeMorphTo = 0;
 let modeMorphStartMs = 0;
 let modeMorphDurationMs = 560;
 let modeMorphScrollY = 0;
-let lastGridScrollY = 0;
 let gridOrderIds = [];
 let morphOrderIds = null;
 let morphGridSrcOrder = null;
@@ -458,7 +457,7 @@ function setGridLayoutMode() {
   canvas.style.opacity = "0";
   canvas.style.pointerEvents = "none";
   document.body.style.overflow = "auto";
-  window.scrollTo(0, lastGridScrollY);
+  window.scrollTo(0, 0);
   modeToggle.textContent = "Sphere";
 }
 
@@ -479,7 +478,6 @@ function startModeTransition(target) {
   if (target === "sphere" && gridOrderIds.length) morphOrderIds = [...gridOrderIds];
 
   if (target === "sphere") {
-    lastGridScrollY = window.scrollY;
     gridMode.classList.remove("open");
     document.body.style.overflow = "hidden";
     canvas.style.opacity = "1";
