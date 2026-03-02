@@ -115,18 +115,18 @@ canvas.dragging { cursor: grabbing; }
   display: none;
   opacity: 0;
   transition: opacity 280ms ease;
-  padding: 74px 22px 28px;
+  padding: 74px 20px 20px;
 }
 .grid-mode.open {
   display: block;
   opacity: 1;
 }
 .grid-wrap {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
+  position: relative;
+  width: 100%;
 }
 .grid-item {
+  position: absolute;
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -162,6 +162,9 @@ function resize() {
 }
 resize();
 window.addEventListener('resize', resize);
+window.addEventListener('resize', () => {
+  if (viewMode === "grid" || modeMorph > 0.001) renderGridMode();
+});
 
 const N = 180, FPS = 60;
 const HOVER_RADIUS = 60, SCALE_MAX = 1.5, SCALE_SPEED = 0.12;
@@ -170,6 +173,7 @@ const ZOOM_MIN = 0.65, ZOOM_MAX = 2.2;
 const DEFAULT_ZOOM = 1.85;
 const AUTO_ROT_SPEED = 0.00011;
 const IMAGE_MANIFEST_URL = "images/manifest.json";
+const GRID_COLS = 5, GRID_GAP = 20;
 
 // Mouse state
 let mouse = { x: -9999, y: -9999 };
@@ -191,6 +195,8 @@ let modeMorphStartMs = 0;
 let modeMorphDurationMs = 560;
 let modeMorphScrollY = 0;
 let lastGridScrollY = 0;
+let gridOrderIds = [];
+let morphOrderIds = null;
 
 const viewerEl = document.createElement("div");
 viewerEl.className = "viewer";
@@ -365,12 +371,46 @@ function rebuildViewerItemsFromPool() {
   if (list.length > 0) viewerItems = list;
 }
 
+function buildMasonryLayout(count, getAspect, scrollY = 0, ids = null) {
+  const cols = GRID_COLS;
+  const gap = GRID_GAP;
+  const width = Math.max(120, W - 40);
+  const colW = (width - gap * (cols - 1)) / cols;
+  const colHeights = Array.from({ length: cols }, () => 0);
+  const rects = [];
+
+  for (let i = 0; i < count; i++) {
+    const aspect = Math.max(0.2, getAspect(i));
+    const h = colW / aspect;
+    let col = 0;
+    for (let c = 1; c < cols; c++) if (colHeights[c] < colHeights[col]) col = c;
+    const left = col * (colW + gap);
+    const top = colHeights[col];
+    colHeights[col] += h + gap;
+    const rect = { x: 20 + left, y: 74 + top - scrollY, w: colW, h };
+    if (ids && ids[i] != null) rect.id = ids[i];
+    rects.push(rect);
+  }
+  return { rects, contentHeight: Math.max(...colHeights, 0) - gap };
+}
+
 function renderGridMode() {
   gridWrap.innerHTML = "";
+  const { rects, contentHeight } = buildMasonryLayout(
+    viewerItems.length,
+    i => viewerItems[i].aspect,
+    0
+  );
+  gridWrap.style.height = `${Math.max(0, contentHeight)}px`;
   viewerItems.forEach((media, i) => {
+    const r = rects[i];
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "grid-item";
+    btn.style.left = `${r.x - 20}px`;
+    btn.style.top = `${r.y - 74}px`;
+    btn.style.width = `${r.w}px`;
+    btn.style.height = `${r.h}px`;
     const img = document.createElement("img");
     img.src = media.img.src;
     img.alt = "";
@@ -419,6 +459,8 @@ function startModeTransition(target) {
   modeMorphTo = target === "grid" ? 1 : 0;
   modeMorphStartMs = performance.now();
   modeMorphScrollY = target === "sphere" ? window.scrollY : 0;
+  if (target === "grid") morphOrderIds = null;
+  if (target === "sphere" && gridOrderIds.length) morphOrderIds = [...gridOrderIds];
 
   if (target === "sphere") {
     lastGridScrollY = window.scrollY;
@@ -733,18 +775,26 @@ function pickTopItem(x, y) {
   return null;
 }
 
-function getGridRectForIndex(index, aspect, scrollY) {
-  const cols = 5;
-  const pad = 22;
-  const gap = 12;
-  const avail = Math.max(100, W - pad * 2 - gap * (cols - 1));
-  const cellW = avail / cols;
-  const cellH = cellW / Math.max(0.2, aspect || 1);
-  const col = index % cols;
-  const row = Math.floor(index / cols);
-  const x = pad + col * (cellW + gap);
-  const y = 74 + row * (cellH + gap) - scrollY;
-  return { x, y, w: cellW, h: cellH };
+function buildMorphGridRectById(drawQueue, scrollY) {
+  if (!drawQueue.length) return new Map();
+  if (!morphOrderIds || morphOrderIds.length !== drawQueue.length) {
+    const sorted = [...drawQueue].sort((a, b) => b.fz - a.fz);
+    morphOrderIds = sorted.map(it => it.d.id);
+  }
+  const byId = new Map(drawQueue.map(it => [it.d.id, it]));
+  const ordered = morphOrderIds
+    .map(id => byId.get(id))
+    .filter(Boolean);
+  const ids = ordered.map(it => it.d.id);
+  const { rects } = buildMasonryLayout(
+    ordered.length,
+    i => (ordered[i].srcW || 120) / Math.max(1, ordered[i].srcH || 120),
+    scrollY,
+    ids
+  );
+  const rectById = new Map();
+  rects.forEach(r => rectById.set(r.id, r));
+  return rectById;
 }
 
 function applyViewportEdgeBlur(cx, cy, Rv) {
@@ -797,7 +847,10 @@ function animate() {
     if (t >= 1) {
       modeMorph = modeMorphTo;
       viewMode = modeMorphTo >= 0.5 ? "grid" : "sphere";
-      if (viewMode === "grid") setGridLayoutMode();
+      if (viewMode === "grid") {
+        if (morphOrderIds && morphOrderIds.length) gridOrderIds = [...morphOrderIds];
+        setGridLayoutMode();
+      }
       else setSphereLayoutMode();
     }
   }
@@ -923,8 +976,13 @@ function animate() {
     it.d.hoverPop += (targetPop - it.d.hoverPop) * 0.18;
   }
 
+  const morphRectById = modeMorph > 0.001
+    ? buildMorphGridRectById(drawQueue, modeMorphScrollY)
+    : null;
+
   const drawCard = (it, popT) => {
     let tl = it.tl, tr = it.tr, bl = it.bl, br = it.br;
+    let morphAlpha = 1;
     if (popT > 0.001) {
       const dm = Math.hypot(it.px - cx, it.py - cy) || 1;
       const lift = HOVER_LIFT_PX * popT;
@@ -935,22 +993,30 @@ function animate() {
       tl = remap(tl); tr = remap(tr); bl = remap(bl); br = remap(br);
     }
 
-    if (modeMorph > 0.001) {
-      const aspect = it.srcW / Math.max(1, it.srcH);
-      const gr = getGridRectForIndex(it.itemIndex, aspect, modeMorphScrollY);
+    if (modeMorph > 0.001 && morphRectById) {
+      const gr = morphRectById.get(it.d.id);
+      if (gr) {
       const gtl = { x: gr.x, y: gr.y };
       const gtr = { x: gr.x + gr.w, y: gr.y };
       const gbl = { x: gr.x, y: gr.y + gr.h };
       const gbr = { x: gr.x + gr.w, y: gr.y + gr.h };
+      const srcCx = (tl.x + tr.x + bl.x + br.x) * 0.25;
+      const srcCy = (tl.y + tr.y + bl.y + br.y) * 0.25;
+      const dstCx = gr.x + gr.w * 0.5;
+      const dstCy = gr.y + gr.h * 0.5;
+      const dist = Math.hypot(srcCx - dstCx, srcCy - dstCy);
+      const proximity = 1 - Math.min(1, dist / (Math.hypot(W, H) * 0.85));
+      morphAlpha = 0.22 + 0.78 * (0.55 * proximity + 0.45 * modeMorph);
       const lerp = (a, b) => a + (b - a) * modeMorph;
       tl = { x: lerp(tl.x, gtl.x), y: lerp(tl.y, gtl.y) };
       tr = { x: lerp(tr.x, gtr.x), y: lerp(tr.y, gtr.y) };
       bl = { x: lerp(bl.x, gbl.x), y: lerp(bl.y, gbl.y) };
       br = { x: lerp(br.x, gbr.x), y: lerp(br.y, gbr.y) };
+      }
     }
 
     ctx.save();
-    ctx.globalAlpha = Math.min(1, it.a * (0.75 + it.front * 0.25) * (1 + 0.08 * popT));
+    ctx.globalAlpha = Math.min(1, it.a * (0.75 + it.front * 0.25) * (1 + 0.08 * popT) * morphAlpha);
     ctx.setTransform(
       (tr.x - tl.x) / it.srcW,
       (tr.y - tl.y) / it.srcW,
