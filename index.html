@@ -100,16 +100,16 @@ canvas.dragging { cursor: grabbing; }
   right: 16px;
   z-index: 24;
   border: 0;
-  border-radius: 22px;
-  width: 46px;
-  height: 46px;
+  border-radius: 64px;
+  width: 140px;
+  height: 140px;
   padding: 0;
   background: rgba(0,0,0,0.58);
   color: #fff;
   cursor: pointer;
 }
-.mode-toggle svg { width: 26px; height: 26px; display: block; margin: 10px; }
-.mode-toggle .morph-base { stroke: rgba(255,255,255,0.95); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.mode-toggle svg { width: 78px; height: 78px; display: block; margin: 31px; }
+.mode-toggle .morph-base { stroke: rgba(255,255,255,0.95); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .mode-toggle .sphere-g,
 .mode-toggle .grid-g { transform-origin: 12px 12px; transition: transform 300ms ease, opacity 240ms ease; }
 .mode-toggle .sphere-g { opacity: 1; transform: rotate(0deg) scale(1); }
@@ -238,17 +238,18 @@ modeToggle.innerHTML = `
   <g class="morph-base sphere-g">
     <circle cx="12" cy="12" r="8.5"></circle>
     <path d="M3.5 12h17"></path>
+    <path d="M12 3.5v17"></path>
     <path d="M12 3.5c-2.3 1.8-3.8 4.9-3.8 8.5s1.5 6.7 3.8 8.5"></path>
     <path d="M12 3.5c2.3 1.8 3.8 4.9 3.8 8.5s-1.5 6.7-3.8 8.5"></path>
     <path d="M6.2 8.1c1.7.9 3.7 1.4 5.8 1.4s4.1-.5 5.8-1.4"></path>
     <path d="M6.2 15.9c1.7-.9 3.7-1.4 5.8-1.4s4.1.5 5.8 1.4"></path>
   </g>
   <g class="morph-base grid-g">
-    <rect x="4.3" y="4.3" width="15.4" height="15.4" rx="1.6"></rect>
-    <path d="M9.4 4.8v14.4"></path>
-    <path d="M14.6 4.8v14.4"></path>
-    <path d="M4.8 9.4h14.4"></path>
-    <path d="M4.8 14.6h14.4"></path>
+    <rect x="3.8" y="3.8" width="7.1" height="9.8" rx="0.9"></rect>
+    <rect x="11.9" y="3.8" width="8.3" height="6.2" rx="0.9"></rect>
+    <rect x="11.9" y="11.1" width="5.1" height="9.1" rx="0.9"></rect>
+    <rect x="3.8" y="14.6" width="7.1" height="5.6" rx="0.9"></rect>
+    <rect x="17.9" y="11.1" width="2.3" height="9.1" rx="0.6"></rect>
   </g>
 </svg>`;
 document.body.appendChild(modeToggle);
