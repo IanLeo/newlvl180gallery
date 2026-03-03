@@ -116,19 +116,22 @@ canvas.dragging { cursor: grabbing; }
 .viewer-nav-right { right: 0; }
 .viewer-close {
   position: fixed;
-  top: 8px;
-  right: 8px;
+  top: 14px;
+  right: 16px;
   z-index: 35;
   width: 128px;
   height: 128px;
   border: 0;
-  border-radius: 16px;
-  background: transparent;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.28);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+  box-shadow: 0 0 36px rgba(0,0,0,0.5), 0 0 62px rgba(0,0,0,0.32);
   color: #fff;
   padding: 0;
   cursor: pointer;
 }
-.viewer-close svg { width: 116px; height: 116px; display: block; margin: 6px; }
+.viewer-close svg { width: 100px; height: 100px; display: block; margin: 14px; }
 .viewer-close svg { transition: transform 240ms ease-in-out; transform-origin: 58px 58px; }
 .viewer-close:hover svg { transform: rotate(90deg); }
 .viewer-close.closing svg {
