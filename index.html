@@ -26,6 +26,7 @@ canvas.dragging { cursor: grabbing; }
 .viewer {
   position: fixed;
   inset: 0;
+  --viewer-vpad: clamp(140px, 16vh, 180px);
   z-index: 30;
   display: block;
   pointer-events: none;
@@ -44,43 +45,49 @@ canvas.dragging { cursor: grabbing; }
   position: absolute;
   left: 50%;
   top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 2;
-  height: 100vh;
+  transform: translate(-50%, -50%) translateX(0);
+  z-index: 3;
+  height: calc(100vh - (var(--viewer-vpad) * 2));
   width: auto;
   max-width: 96vw;
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
-  transition: opacity 180ms ease;
+  transition: opacity 240ms ease-in-out, transform 240ms ease-in-out;
 }
 .viewer-side {
   position: absolute;
-  inset: 0;
-  z-index: 1;
+  top: 50%;
+  transform: translateY(-50%);
+  width: calc(50vw - 10px);
+  height: calc(100vh - (var(--viewer-vpad) * 2));
+  z-index: 2;
   display: flex;
   align-items: center;
   pointer-events: none;
   opacity: 0.55;
-  transition: opacity 180ms ease;
+  overflow: hidden;
+  transition: opacity 240ms ease-in-out;
 }
 .viewer-side.left {
-  justify-content: flex-start;
-  transform: translateX(-30%);
+  right: calc(50% + 10px);
+  justify-content: flex-end;
 }
 .viewer-side.right {
-  justify-content: flex-end;
-  transform: translateX(30%);
+  left: calc(50% + 10px);
+  justify-content: flex-start;
 }
 .viewer-side.hidden { opacity: 0; }
 .viewer-side-img {
-  height: 92vh;
+  height: 100%;
   width: auto;
-  max-width: 72vw;
+  max-width: 100%;
   object-fit: contain;
   opacity: 0.34;
   user-select: none;
   -webkit-user-drag: none;
+  transform: translateX(0);
+  transition: opacity 240ms ease-in-out, transform 240ms ease-in-out;
 }
 .viewer-side-fade {
   position: absolute;
@@ -91,6 +98,22 @@ canvas.dragging { cursor: grabbing; }
 }
 .viewer-side.right .viewer-side-fade {
   background: linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,0.05) 72%, rgba(0,0,0,0.85) 100%);
+}
+.viewer.switch-next .viewer-main {
+  opacity: 0;
+  transform: translate(-50%, -50%) translateX(-20px);
+}
+.viewer.switch-prev .viewer-main {
+  opacity: 0;
+  transform: translate(-50%, -50%) translateX(20px);
+}
+.viewer.switch-next .viewer-side-img {
+  opacity: 0.16;
+  transform: translateX(-18px);
+}
+.viewer.switch-prev .viewer-side-img {
+  opacity: 0.16;
+  transform: translateX(18px);
 }
 .viewer-strip {
   position: absolute;
@@ -263,6 +286,7 @@ let viewerItems = [];
 let viewerOpen = false;
 let viewerIndex = 0;
 let viewerAnimating = false;
+let viewerSwitchTimer = null;
 let viewMode = "sphere";
 let modeMorph = 0;
 let modeMorphFrom = 0;
@@ -620,17 +644,43 @@ function updateViewerSideImages() {
   viewerSideRight.classList.remove("hidden");
 }
 
-function setViewerIndex(i) {
+function setViewerIndex(i, opts = {}) {
   if (!viewerItems.length) return;
   const n = viewerItems.length;
-  viewerIndex = ((i % n) + n) % n;
-  const media = viewerItems[viewerIndex];
-  viewerMain.src = media.img.src;
-  updateViewerSideImages();
-  const thumbs = viewerStrip.querySelectorAll(".viewer-thumb");
-  thumbs.forEach((el, idx) => el.classList.toggle("active", idx === viewerIndex));
-  const active = thumbs[viewerIndex];
-  if (active) active.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  const nextIndex = ((i % n) + n) % n;
+  const prevIndex = viewerIndex;
+  const animate = opts.animate !== false && viewerOpen;
+  const direction = opts.direction || (nextIndex === prevIndex ? 0 : (nextIndex > prevIndex ? 1 : -1));
+  const commit = () => {
+    viewerIndex = nextIndex;
+    const media = viewerItems[viewerIndex];
+    viewerMain.src = media.img.src;
+    updateViewerSideImages();
+    const thumbs = viewerStrip.querySelectorAll(".viewer-thumb");
+    thumbs.forEach((el, idx) => el.classList.toggle("active", idx === viewerIndex));
+    const active = thumbs[viewerIndex];
+    if (active) active.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  };
+
+  if (!animate || direction === 0) {
+    if (viewerSwitchTimer) {
+      clearTimeout(viewerSwitchTimer);
+      viewerSwitchTimer = null;
+    }
+    viewerEl.classList.remove("switch-next", "switch-prev");
+    commit();
+    return;
+  }
+
+  if (viewerSwitchTimer) clearTimeout(viewerSwitchTimer);
+  viewerEl.classList.remove("switch-next", "switch-prev");
+  viewerEl.classList.add(direction > 0 ? "switch-next" : "switch-prev");
+  viewerSwitchTimer = setTimeout(() => {
+    commit();
+    requestAnimationFrame(() => {
+      viewerEl.classList.remove("switch-next", "switch-prev");
+    });
+  }, 130);
 }
 
 function getMediaAspect(media) {
@@ -643,15 +693,18 @@ function getMediaAspect(media) {
 function getViewerTargetRect(media) {
   const vw = innerWidth;
   const vh = innerHeight;
+  const pad = clamp(vh * 0.16, 140, 180);
+  const targetH = Math.max(32, vh - pad * 2);
   const aspect = getMediaAspect(media);
   const maxW = vw * 0.96;
-  const wByHeight = vh * aspect;
+  const wByHeight = targetH * aspect;
   const w = Math.min(maxW, wByHeight);
   const h = w / aspect;
   const x = (vw - w) * 0.5;
   const y = (vh - h) * 0.5;
   return { x, y, w, h };
 }
+
 
 function waitForViewerMain(src) {
   return new Promise(resolve => {
@@ -730,7 +783,7 @@ async function openViewerByMedia(media, sourceBox) {
   viewerSideLeft.style.opacity = "0";
   viewerSideRight.style.opacity = "0";
   renderViewerStrip();
-  setViewerIndex(idx);
+  setViewerIndex(idx, { animate: false });
   const mainReady = waitForViewerMain(viewerItems[idx].img.src);
   await Promise.all([animateViewerOpen(media, sourceBox), mainReady]);
   viewerMain.style.opacity = "1";
@@ -751,6 +804,11 @@ async function openViewerByMedia(media, sourceBox) {
 function closeViewer() {
   viewerOpen = false;
   viewerEl.classList.remove("open");
+  viewerEl.classList.remove("switch-next", "switch-prev");
+  if (viewerSwitchTimer) {
+    clearTimeout(viewerSwitchTimer);
+    viewerSwitchTimer = null;
+  }
   viewerSideLeft.classList.add("hidden");
   viewerSideRight.classList.add("hidden");
   viewerTransit.style.display = "none";
@@ -758,8 +816,8 @@ function closeViewer() {
 }
 
 viewerClose.addEventListener("click", closeViewer);
-viewerNavLeft.addEventListener("click", () => setViewerIndex(viewerIndex - 1));
-viewerNavRight.addEventListener("click", () => setViewerIndex(viewerIndex + 1));
+viewerNavLeft.addEventListener("click", () => setViewerIndex(viewerIndex - 1, { direction: -1 }));
+viewerNavRight.addEventListener("click", () => setViewerIndex(viewerIndex + 1, { direction: 1 }));
 viewerStrip.addEventListener("wheel", e => {
   if (!viewerOpen) return;
   const dx = Math.abs(e.deltaX);
@@ -775,8 +833,8 @@ modeToggle.addEventListener("click", () => {
 window.addEventListener("keydown", e => {
   if (!viewerOpen) return;
   if (e.key === "Escape") closeViewer();
-  else if (e.key === "ArrowLeft") setViewerIndex(viewerIndex - 1);
-  else if (e.key === "ArrowRight") setViewerIndex(viewerIndex + 1);
+  else if (e.key === "ArrowLeft") setViewerIndex(viewerIndex - 1, { direction: -1 });
+  else if (e.key === "ArrowRight") setViewerIndex(viewerIndex + 1, { direction: 1 });
 });
 async function loadCustomImagesIntoPool(pool) {
   try {
