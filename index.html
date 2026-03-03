@@ -44,42 +44,31 @@ canvas.dragging { cursor: grabbing; }
 }
 .viewer-hero-track {
   position: absolute;
-  left: 50%;
+  left: 0;
   top: 50%;
   height: calc(100vh - (var(--viewer-vpad) * 2));
-  display: grid;
-  grid-template-columns: minmax(0, 45vw) auto minmax(0, 45vw);
-  align-items: center;
-  gap: 20px;
-  transform: translate(-50%, -50%) translateX(var(--hero-shift, 0px));
-  transition: transform 280ms ease-in-out;
-}
-.viewer-side-slot {
-  height: 100%;
   display: flex;
   align-items: center;
-  overflow: hidden;
+  gap: 20px;
+  transform: translateY(-50%) translateX(var(--hero-shift, 0px));
+  transition: transform 360ms cubic-bezier(0.33, 0, 0.2, 1), opacity 220ms ease-in-out;
+  opacity: 1;
 }
-.viewer-side-slot.left { justify-content: flex-end; }
-.viewer-side-slot.right { justify-content: flex-start; }
-.viewer-main {
+.viewer-hero-item {
+  height: 100%;
+  flex: 0 0 auto;
+}
+.viewer-hero-item img {
   height: 100%;
   width: auto;
-  max-width: 96vw;
   object-fit: contain;
+  display: block;
   user-select: none;
   -webkit-user-drag: none;
+  opacity: 0.38;
   transition: opacity 220ms ease-in-out;
 }
-.viewer-side-img {
-  height: 100%;
-  width: auto;
-  max-width: 70vw;
-  object-fit: contain;
-  opacity: 0.38;
-  user-select: none;
-  -webkit-user-drag: none;
-}
+.viewer-hero-item.active img { opacity: 1; }
 .viewer-strip {
   position: absolute;
   left: 0;
@@ -239,6 +228,10 @@ resize();
 window.addEventListener('resize', resize);
 window.addEventListener('resize', () => {
   if (viewMode === "grid" || modeMorph > 0.001) renderGridMode();
+  if (viewerOpen) {
+    refreshViewerHeroCenters();
+    centerViewerOnIndex(viewerIndex, false);
+  }
 });
 
 const N = 180, FPS = 60;
@@ -262,8 +255,9 @@ let viewerItems = [];
 let viewerOpen = false;
 let viewerIndex = 0;
 let viewerAnimating = false;
-let viewerSwitching = false;
-let viewerPendingDirection = 0;
+let viewerHeroItems = [];
+let viewerHeroCenters = [];
+let viewerHeroShift = 0;
 let viewMode = "sphere";
 let modeMorph = 0;
 let modeMorphFrom = 0;
@@ -288,19 +282,12 @@ viewerEl.innerHTML = `
   <div class="viewer-nav viewer-nav-left"></div>
   <div class="viewer-nav viewer-nav-right"></div>
   <div class="viewer-main-wrap">
-    <div class="viewer-hero-track">
-      <div class="viewer-side-slot left"><img class="viewer-side-img viewer-side-left-img" alt=""></div>
-      <img class="viewer-main" alt="">
-      <div class="viewer-side-slot right"><img class="viewer-side-img viewer-side-right-img" alt=""></div>
-    </div>
+    <div class="viewer-hero-track"></div>
   </div>
   <div class="viewer-strip"></div>
 `;
 document.body.appendChild(viewerEl);
-const viewerMain = viewerEl.querySelector(".viewer-main");
 const viewerHeroTrack = viewerEl.querySelector(".viewer-hero-track");
-const viewerSideLeftImg = viewerEl.querySelector(".viewer-side-left-img");
-const viewerSideRightImg = viewerEl.querySelector(".viewer-side-right-img");
 const viewerStrip = viewerEl.querySelector(".viewer-strip");
 const viewerClose = viewerEl.querySelector(".viewer-close");
 const viewerNavLeft = viewerEl.querySelector(".viewer-nav-left");
@@ -611,88 +598,77 @@ function renderViewerStrip() {
   });
 }
 
-function updateViewerSideImages() {
-  if (!viewerItems.length) return;
-  if (viewerItems.length < 2) {
-    viewerSideLeftImg.style.opacity = "0";
-    viewerSideRightImg.style.opacity = "0";
+function renderViewerHeroTrack() {
+  viewerHeroTrack.innerHTML = "";
+  viewerHeroItems = [];
+  viewerItems.forEach(media => {
+    const slot = document.createElement("div");
+    slot.className = "viewer-hero-item";
+    const img = document.createElement("img");
+    img.src = media.img.src;
+    img.alt = "";
+    img.addEventListener("load", () => {
+      refreshViewerHeroCenters();
+      if (viewerOpen) centerViewerOnIndex(viewerIndex, false);
+    });
+    slot.appendChild(img);
+    viewerHeroTrack.appendChild(slot);
+    viewerHeroItems.push(slot);
+  });
+  refreshViewerHeroCenters();
+}
+
+function refreshViewerHeroCenters() {
+  viewerHeroCenters = viewerHeroItems.map(item => item.offsetLeft + item.offsetWidth * 0.5);
+}
+
+function centerViewerOnIndex(index, animate) {
+  if (!viewerHeroCenters.length || index < 0 || index >= viewerHeroCenters.length) return;
+  const targetShift = innerWidth * 0.5 - viewerHeroCenters[index];
+  viewerHeroShift = targetShift;
+  if (!animate) {
+    viewerHeroTrack.style.transition = "none";
+    viewerHeroTrack.style.setProperty("--hero-shift", `${viewerHeroShift}px`);
+    void viewerHeroTrack.offsetWidth;
+    viewerHeroTrack.style.transition = "";
     return;
   }
-  const n = viewerItems.length;
-  const prev = viewerItems[(viewerIndex - 1 + n) % n];
-  const next = viewerItems[(viewerIndex + 1) % n];
-  viewerSideLeftImg.src = prev.img.src;
-  viewerSideRightImg.src = next.img.src;
-  viewerSideLeftImg.style.opacity = "";
-  viewerSideRightImg.style.opacity = "";
+  viewerHeroTrack.style.setProperty("--hero-shift", `${viewerHeroShift}px`);
+}
+
+function updateViewerSelectionUI() {
+  const thumbs = viewerStrip.querySelectorAll(".viewer-thumb");
+  thumbs.forEach((el, idx) => el.classList.toggle("active", idx === viewerIndex));
+  const activeThumb = thumbs[viewerIndex];
+  if (activeThumb) activeThumb.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  viewerHeroItems.forEach((item, idx) => item.classList.toggle("active", idx === viewerIndex));
+}
+
+function waitForHeroImage(index) {
+  return new Promise(resolve => {
+    const item = viewerHeroItems[index];
+    const img = item ? item.querySelector("img") : null;
+    if (!img || img.complete) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      img.removeEventListener("load", done);
+      img.removeEventListener("error", done);
+      resolve();
+    };
+    img.addEventListener("load", done, { once: true });
+    img.addEventListener("error", done, { once: true });
+  });
 }
 
 function setViewerIndex(i, opts = {}) {
   if (!viewerItems.length) return;
   const n = viewerItems.length;
-  const nextIndex = ((i % n) + n) % n;
-  const prevIndex = viewerIndex;
+  viewerIndex = ((i % n) + n) % n;
   const animate = opts.animate !== false && viewerOpen;
-  const direction = opts.direction || (nextIndex === prevIndex ? 0 : (nextIndex > prevIndex ? 1 : -1));
-
-  const applyIndex = idx => {
-    viewerIndex = idx;
-    const media = viewerItems[viewerIndex];
-    viewerMain.src = media.img.src;
-    updateViewerSideImages();
-    const thumbs = viewerStrip.querySelectorAll(".viewer-thumb");
-    thumbs.forEach((el, ti) => el.classList.toggle("active", ti === viewerIndex));
-    const active = thumbs[viewerIndex];
-    if (active) active.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-  };
-
-  if (!animate || direction === 0 || Math.abs(nextIndex - prevIndex) > 1 && !(prevIndex === 0 && nextIndex === n - 1) && !(prevIndex === n - 1 && nextIndex === 0)) {
-    viewerSwitching = false;
-    viewerPendingDirection = 0;
-    viewerHeroTrack.style.transition = "none";
-    viewerHeroTrack.style.setProperty("--hero-shift", "0px");
-    void viewerHeroTrack.offsetWidth;
-    viewerHeroTrack.style.transition = "";
-    applyIndex(nextIndex);
-    return;
-  }
-
-  const dir = direction > 0 ? 1 : -1;
-  if (viewerSwitching) {
-    viewerPendingDirection = dir;
-    return;
-  }
-  viewerSwitching = true;
-  viewerPendingDirection = 0;
-
-  const targetEl = dir > 0 ? viewerSideRightImg : viewerSideLeftImg;
-  const mainRect = viewerMain.getBoundingClientRect();
-  const targetRect = targetEl.getBoundingClientRect();
-  if (mainRect.width < 1 || targetRect.width < 1) {
-    applyIndex(nextIndex);
-    viewerSwitching = false;
-    return;
-  }
-  const deltaToCenter = (targetRect.left + targetRect.width * 0.5) - (mainRect.left + mainRect.width * 0.5);
-
-  viewerHeroTrack.style.transition = "transform 300ms ease-in-out";
-  viewerHeroTrack.style.setProperty("--hero-shift", `${-deltaToCenter}px`);
-
-  const onDone = () => {
-    viewerHeroTrack.removeEventListener("transitionend", onDone);
-    applyIndex(nextIndex);
-    viewerHeroTrack.style.transition = "none";
-    viewerHeroTrack.style.setProperty("--hero-shift", "0px");
-    void viewerHeroTrack.offsetWidth;
-    viewerHeroTrack.style.transition = "";
-    viewerSwitching = false;
-    if (viewerPendingDirection) {
-      const pd = viewerPendingDirection;
-      viewerPendingDirection = 0;
-      setViewerIndex(viewerIndex + pd, { direction: pd });
-    }
-  };
-  viewerHeroTrack.addEventListener("transitionend", onDone, { once: true });
+  updateViewerSelectionUI();
+  centerViewerOnIndex(viewerIndex, animate);
 }
 
 function getMediaAspect(media) {
@@ -715,24 +691,6 @@ function getViewerTargetRect(media) {
   const x = (vw - w) * 0.5;
   const y = (vh - h) * 0.5;
   return { x, y, w, h };
-}
-
-
-function waitForViewerMain(src) {
-  return new Promise(resolve => {
-    if (viewerMain.src !== src) viewerMain.src = src;
-    if (viewerMain.complete) {
-      resolve();
-      return;
-    }
-    const done = () => {
-      viewerMain.removeEventListener("load", done);
-      viewerMain.removeEventListener("error", done);
-      resolve();
-    };
-    viewerMain.addEventListener("load", done, { once: true });
-    viewerMain.addEventListener("error", done, { once: true });
-  });
 }
 
 function matrixForQuad(quad, srcW, srcH) {
@@ -790,18 +748,17 @@ async function openViewerByMedia(media, sourceBox) {
   viewerAnimating = true;
   viewerOpen = true;
   viewerEl.classList.add("open");
-  viewerMain.style.opacity = "0";
+  viewerHeroTrack.style.opacity = "0";
   viewerStrip.style.opacity = "0";
-  viewerSideLeftImg.style.opacity = "0";
-  viewerSideRightImg.style.opacity = "0";
   renderViewerStrip();
+  renderViewerHeroTrack();
   setViewerIndex(idx, { animate: false });
-  const mainReady = waitForViewerMain(viewerItems[idx].img.src);
-  await Promise.all([animateViewerOpen(media, sourceBox), mainReady]);
-  viewerMain.style.opacity = "1";
+  const heroReady = waitForHeroImage(idx);
+  await Promise.all([animateViewerOpen(media, sourceBox), heroReady]);
+  refreshViewerHeroCenters();
+  centerViewerOnIndex(viewerIndex, false);
+  viewerHeroTrack.style.opacity = "1";
   viewerStrip.style.opacity = "1";
-  viewerSideLeftImg.style.opacity = "";
-  viewerSideRightImg.style.opacity = "";
   requestAnimationFrame(() => {
     viewerTransit.style.transition = "opacity 140ms ease";
     viewerTransit.style.opacity = "0";
@@ -816,14 +773,11 @@ async function openViewerByMedia(media, sourceBox) {
 function closeViewer() {
   viewerOpen = false;
   viewerEl.classList.remove("open");
-  viewerSwitching = false;
-  viewerPendingDirection = 0;
   viewerHeroTrack.style.transition = "none";
   viewerHeroTrack.style.setProperty("--hero-shift", "0px");
+  viewerHeroTrack.style.opacity = "0";
   void viewerHeroTrack.offsetWidth;
   viewerHeroTrack.style.transition = "";
-  viewerSideLeftImg.style.opacity = "0";
-  viewerSideRightImg.style.opacity = "0";
   viewerTransit.style.display = "none";
   viewerAnimating = false;
 }
