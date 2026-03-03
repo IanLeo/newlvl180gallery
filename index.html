@@ -11,7 +11,7 @@ canvas.dragging { cursor: grabbing; }
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 25;
+  z-index: 40;
   display: inline-block;
   color: #fff;
   font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -26,116 +26,92 @@ canvas.dragging { cursor: grabbing; }
 .viewer {
   position: fixed;
   inset: 0;
-  --viewer-vpad: clamp(140px, 16vh, 180px);
+  --viewer-vpad: clamp(118px, 14vh, 156px);
+  --viewer-strip-h: 96px;
   z-index: 30;
   display: block;
   pointer-events: none;
   opacity: 0;
   transition: opacity 260ms ease;
-  background: rgba(0, 0, 0, 0.92);
+  background: #000;
 }
 .viewer.open { pointer-events: auto; opacity: 1; }
 .viewer-main-wrap {
   position: absolute;
   inset: 0;
+  display: grid;
+  place-items: center;
   overflow: hidden;
   pointer-events: none;
 }
-.viewer-main {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) translateX(0);
-  z-index: 3;
+.viewer-hero-track {
   height: calc(100vh - (var(--viewer-vpad) * 2));
+  display: inline-flex;
+  align-items: center;
+  gap: 20px;
+  transform: translateX(0);
+  transition: transform 280ms ease-in-out;
+}
+.viewer-main {
+  height: 100%;
   width: auto;
   max-width: 96vw;
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
-  transition: opacity 240ms ease-in-out, transform 240ms ease-in-out;
+  transition: opacity 220ms ease-in-out;
 }
-.viewer-side {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: calc(50vw - 10px);
-  height: calc(100vh - (var(--viewer-vpad) * 2));
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  pointer-events: none;
-  opacity: 0.55;
-  overflow: hidden;
-  transition: opacity 240ms ease-in-out;
-}
-.viewer-side.left {
-  right: calc(50% + 10px);
-  justify-content: flex-end;
-}
-.viewer-side.right {
-  left: calc(50% + 10px);
-  justify-content: flex-start;
-}
-.viewer-side.hidden { opacity: 0; }
 .viewer-side-img {
   height: 100%;
   width: auto;
-  max-width: 100%;
+  max-width: 70vw;
   object-fit: contain;
-  opacity: 0.34;
+  opacity: 0.38;
   user-select: none;
   -webkit-user-drag: none;
-  transform: translateX(0);
-  transition: opacity 240ms ease-in-out, transform 240ms ease-in-out;
 }
-.viewer-side-fade {
+.viewer-edge-fade {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: var(--viewer-strip-h);
+  width: 32vw;
+  z-index: 2;
+  pointer-events: none;
 }
-.viewer-side.left .viewer-side-fade {
-  background: linear-gradient(to left, rgba(0,0,0,0) 0%, rgba(0,0,0,0.05) 72%, rgba(0,0,0,0.85) 100%);
+.viewer-edge-fade.left {
+  left: 0;
+  background: linear-gradient(to left, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 88%, rgba(0,0,0,0.94) 100%);
 }
-.viewer-side.right .viewer-side-fade {
-  background: linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,0.05) 72%, rgba(0,0,0,0.85) 100%);
+.viewer-edge-fade.right {
+  right: 0;
+  background: linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 88%, rgba(0,0,0,0.94) 100%);
 }
-.viewer.switch-next .viewer-main {
-  opacity: 0;
-  transform: translate(-50%, -50%) translateX(-20px);
-}
-.viewer.switch-prev .viewer-main {
-  opacity: 0;
-  transform: translate(-50%, -50%) translateX(20px);
-}
-.viewer.switch-next .viewer-side-img {
-  opacity: 0.16;
-  transform: translateX(-18px);
-}
-.viewer.switch-prev .viewer-side-img {
-  opacity: 0.16;
-  transform: translateX(18px);
-}
+.viewer.switch-next .viewer-hero-track { transform: translateX(-48px); }
+.viewer.switch-prev .viewer-hero-track { transform: translateX(48px); }
 .viewer-strip {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 132px;
-  padding: 14px 18px;
+  height: var(--viewer-strip-h);
+  padding: 10px 14px;
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+  pointer-events: auto;
+  touch-action: pan-x;
   background: linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0));
   transition: opacity 180ms ease;
 }
 .viewer-thumb {
   flex: 0 0 auto;
-  width: 82px;
-  height: 104px;
+  width: 62px;
+  height: 76px;
   border: 0;
   background: transparent;
   opacity: 0.62;
@@ -150,7 +126,7 @@ canvas.dragging { cursor: grabbing; }
 .viewer-nav {
   position: absolute;
   top: 0;
-  bottom: 132px;
+  bottom: var(--viewer-strip-h);
   width: 50%;
   z-index: 2;
 }
@@ -158,17 +134,23 @@ canvas.dragging { cursor: grabbing; }
 .viewer-nav-right { right: 0; }
 .viewer-close {
   position: fixed;
-  top: 14px;
-  right: 16px;
-  z-index: 5;
-  width: 44px;
-  height: 44px;
+  top: 8px;
+  right: 8px;
+  z-index: 35;
+  width: 128px;
+  height: 128px;
   border: 0;
-  border-radius: 22px;
-  background: rgba(0,0,0,0.58);
+  border-radius: 16px;
+  background: transparent;
   color: #fff;
-  font: 500 30px/44px Arial, sans-serif;
+  padding: 0;
   cursor: pointer;
+}
+.viewer-close svg { width: 116px; height: 116px; display: block; margin: 6px; }
+.viewer-close line {
+  stroke: rgba(255,255,255,0.95);
+  stroke-width: 1.35938;
+  stroke-linecap: round;
 }
 .viewer-transit {
   position: fixed;
@@ -302,20 +284,28 @@ let pendingGridOrderBuild = false;
 const viewerEl = document.createElement("div");
 viewerEl.className = "viewer";
 viewerEl.innerHTML = `
-  <button class="viewer-close" type="button" aria-label="Close">×</button>
+  <button class="viewer-close" type="button" aria-label="Close">
+    <svg viewBox="0 0 116 116" aria-hidden="true">
+      <line x1="18" y1="18" x2="98" y2="98"></line>
+      <line x1="98" y1="18" x2="18" y2="98"></line>
+    </svg>
+  </button>
   <div class="viewer-nav viewer-nav-left"></div>
   <div class="viewer-nav viewer-nav-right"></div>
   <div class="viewer-main-wrap">
-    <div class="viewer-side left hidden"><img class="viewer-side-img viewer-side-left-img" alt=""><div class="viewer-side-fade"></div></div>
-    <div class="viewer-side right hidden"><img class="viewer-side-img viewer-side-right-img" alt=""><div class="viewer-side-fade"></div></div>
-    <img class="viewer-main" alt="">
+    <div class="viewer-hero-track">
+      <img class="viewer-side-img viewer-side-left-img" alt="">
+      <img class="viewer-main" alt="">
+      <img class="viewer-side-img viewer-side-right-img" alt="">
+    </div>
+    <div class="viewer-edge-fade left"></div>
+    <div class="viewer-edge-fade right"></div>
   </div>
   <div class="viewer-strip"></div>
 `;
 document.body.appendChild(viewerEl);
 const viewerMain = viewerEl.querySelector(".viewer-main");
-const viewerSideLeft = viewerEl.querySelector(".viewer-side.left");
-const viewerSideRight = viewerEl.querySelector(".viewer-side.right");
+const viewerHeroTrack = viewerEl.querySelector(".viewer-hero-track");
 const viewerSideLeftImg = viewerEl.querySelector(".viewer-side-left-img");
 const viewerSideRightImg = viewerEl.querySelector(".viewer-side-right-img");
 const viewerStrip = viewerEl.querySelector(".viewer-strip");
@@ -631,8 +621,8 @@ function renderViewerStrip() {
 function updateViewerSideImages() {
   if (!viewerItems.length) return;
   if (viewerItems.length < 2) {
-    viewerSideLeft.classList.add("hidden");
-    viewerSideRight.classList.add("hidden");
+    viewerSideLeftImg.style.opacity = "0";
+    viewerSideRightImg.style.opacity = "0";
     return;
   }
   const n = viewerItems.length;
@@ -640,8 +630,8 @@ function updateViewerSideImages() {
   const next = viewerItems[(viewerIndex + 1) % n];
   viewerSideLeftImg.src = prev.img.src;
   viewerSideRightImg.src = next.img.src;
-  viewerSideLeft.classList.remove("hidden");
-  viewerSideRight.classList.remove("hidden");
+  viewerSideLeftImg.style.opacity = "";
+  viewerSideRightImg.style.opacity = "";
 }
 
 function setViewerIndex(i, opts = {}) {
@@ -680,7 +670,8 @@ function setViewerIndex(i, opts = {}) {
     requestAnimationFrame(() => {
       viewerEl.classList.remove("switch-next", "switch-prev");
     });
-  }, 130);
+    viewerSwitchTimer = null;
+  }, 170);
 }
 
 function getMediaAspect(media) {
@@ -693,7 +684,7 @@ function getMediaAspect(media) {
 function getViewerTargetRect(media) {
   const vw = innerWidth;
   const vh = innerHeight;
-  const pad = clamp(vh * 0.16, 140, 180);
+  const pad = clamp(vh * 0.14, 118, 156);
   const targetH = Math.max(32, vh - pad * 2);
   const aspect = getMediaAspect(media);
   const maxW = vw * 0.96;
@@ -780,16 +771,16 @@ async function openViewerByMedia(media, sourceBox) {
   viewerEl.classList.add("open");
   viewerMain.style.opacity = "0";
   viewerStrip.style.opacity = "0";
-  viewerSideLeft.style.opacity = "0";
-  viewerSideRight.style.opacity = "0";
+  viewerSideLeftImg.style.opacity = "0";
+  viewerSideRightImg.style.opacity = "0";
   renderViewerStrip();
   setViewerIndex(idx, { animate: false });
   const mainReady = waitForViewerMain(viewerItems[idx].img.src);
   await Promise.all([animateViewerOpen(media, sourceBox), mainReady]);
   viewerMain.style.opacity = "1";
   viewerStrip.style.opacity = "1";
-  viewerSideLeft.style.opacity = "";
-  viewerSideRight.style.opacity = "";
+  viewerSideLeftImg.style.opacity = "";
+  viewerSideRightImg.style.opacity = "";
   requestAnimationFrame(() => {
     viewerTransit.style.transition = "opacity 140ms ease";
     viewerTransit.style.opacity = "0";
@@ -805,12 +796,13 @@ function closeViewer() {
   viewerOpen = false;
   viewerEl.classList.remove("open");
   viewerEl.classList.remove("switch-next", "switch-prev");
+  viewerHeroTrack.style.transform = "translateX(0)";
   if (viewerSwitchTimer) {
     clearTimeout(viewerSwitchTimer);
     viewerSwitchTimer = null;
   }
-  viewerSideLeft.classList.add("hidden");
-  viewerSideRight.classList.add("hidden");
+  viewerSideLeftImg.style.opacity = "0";
+  viewerSideRightImg.style.opacity = "0";
   viewerTransit.style.display = "none";
   viewerAnimating = false;
 }
@@ -820,12 +812,10 @@ viewerNavLeft.addEventListener("click", () => setViewerIndex(viewerIndex - 1, { 
 viewerNavRight.addEventListener("click", () => setViewerIndex(viewerIndex + 1, { direction: 1 }));
 viewerStrip.addEventListener("wheel", e => {
   if (!viewerOpen) return;
-  const dx = Math.abs(e.deltaX);
-  const dy = Math.abs(e.deltaY);
-  if (dy > dx) {
-    e.preventDefault();
-    viewerStrip.scrollLeft += e.deltaY;
-  }
+  const delta = e.deltaX + e.deltaY;
+  if (!delta) return;
+  e.preventDefault();
+  viewerStrip.scrollLeft += delta;
 }, { passive: false });
 modeToggle.addEventListener("click", () => {
   startModeTransition(viewMode === "sphere" ? "grid" : "sphere");
