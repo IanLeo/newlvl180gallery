@@ -8,7 +8,7 @@ canvas { display: block; cursor: grab; position: fixed; inset: 0; z-index: 3; op
 canvas.dragging { cursor: grabbing; }
 .site-title {
   position: fixed;
-  top: 20px;
+  top: 22px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
@@ -20,7 +20,7 @@ canvas.dragging { cursor: grabbing; }
   font-size: 28px;
   font-weight: 600;
   line-height: 1;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
   pointer-events: none;
   user-select: none;
 }
@@ -137,16 +137,17 @@ canvas.dragging { cursor: grabbing; }
   right: 16px;
   z-index: 24;
   border: 0;
-  border-radius: 12px;
+  border-radius: 18px;
   width: 128px;
   height: 128px;
   padding: 0;
   background: rgba(0,0,0,0.28);
   -webkit-backdrop-filter: blur(30px);
   backdrop-filter: blur(30px);
+  box-shadow: 0 0 36px rgba(0,0,0,0.5), 0 0 62px rgba(0,0,0,0.32);
   color: #fff;
   cursor: pointer;
-  transition: border-radius 260ms ease, background-color 260ms ease;
+  transition: background-color 260ms ease;
 }
 .mode-toggle svg { width: 100px; height: 100px; display: block; margin: 14px; }
 .mode-toggle .morph-base { stroke: rgba(255,255,255,0.95); fill: none; stroke-linecap: round; stroke-linejoin: round; }
@@ -156,7 +157,6 @@ canvas.dragging { cursor: grabbing; }
 .mode-toggle .grid-g { opacity: 0; transform: rotate(-12deg) scale(0.74); }
 .mode-toggle.grid .sphere-g { opacity: 0; transform: rotate(14deg) scale(0.72); }
 .mode-toggle.grid .grid-g { opacity: 1; transform: rotate(0deg) scale(1); }
-.mode-toggle.grid { border-radius: 64px; }
 
 .grid-mode {
   position: relative;
