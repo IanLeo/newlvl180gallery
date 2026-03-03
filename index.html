@@ -12,9 +12,7 @@ canvas.dragging { cursor: grabbing; }
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+  display: inline-block;
   color: #fff;
   font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 28px;
@@ -23,25 +21,6 @@ canvas.dragging { cursor: grabbing; }
   letter-spacing: -0.02em;
   pointer-events: none;
   user-select: none;
-}
-.site-title .title-icon {
-  width: 20px;
-  height: 20px;
-  border: 1.5px solid rgba(255,255,255,0.95);
-  border-radius: 50%;
-  box-sizing: border-box;
-  position: relative;
-}
-.site-title .title-icon::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  transform: translate(-50%, -50%);
-  background: rgba(255,255,255,0.95);
-  border-radius: 50%;
 }
 
 .viewer {
@@ -58,11 +37,15 @@ canvas.dragging { cursor: grabbing; }
 .viewer-main-wrap {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  overflow: hidden;
   pointer-events: none;
 }
 .viewer-main {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
   height: 100vh;
   width: auto;
   max-width: 96vw;
@@ -70,6 +53,44 @@ canvas.dragging { cursor: grabbing; }
   user-select: none;
   -webkit-user-drag: none;
   transition: opacity 180ms ease;
+}
+.viewer-side {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0.55;
+  transition: opacity 180ms ease;
+}
+.viewer-side.left {
+  justify-content: flex-start;
+  transform: translateX(-30%);
+}
+.viewer-side.right {
+  justify-content: flex-end;
+  transform: translateX(30%);
+}
+.viewer-side.hidden { opacity: 0; }
+.viewer-side-img {
+  height: 92vh;
+  width: auto;
+  max-width: 72vw;
+  object-fit: contain;
+  opacity: 0.34;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.viewer-side-fade {
+  position: absolute;
+  inset: 0;
+}
+.viewer-side.left .viewer-side-fade {
+  background: linear-gradient(to left, rgba(0,0,0,0) 0%, rgba(0,0,0,0.05) 72%, rgba(0,0,0,0.85) 100%);
+}
+.viewer-side.right .viewer-side-fade {
+  background: linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,0.05) 72%, rgba(0,0,0,0.85) 100%);
 }
 .viewer-strip {
   position: absolute;
@@ -82,6 +103,9 @@ canvas.dragging { cursor: grabbing; }
   gap: 10px;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
   background: linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0));
   transition: opacity 180ms ease;
 }
@@ -257,11 +281,19 @@ viewerEl.innerHTML = `
   <button class="viewer-close" type="button" aria-label="Close">×</button>
   <div class="viewer-nav viewer-nav-left"></div>
   <div class="viewer-nav viewer-nav-right"></div>
-  <div class="viewer-main-wrap"><img class="viewer-main" alt=""></div>
+  <div class="viewer-main-wrap">
+    <div class="viewer-side left hidden"><img class="viewer-side-img viewer-side-left-img" alt=""><div class="viewer-side-fade"></div></div>
+    <div class="viewer-side right hidden"><img class="viewer-side-img viewer-side-right-img" alt=""><div class="viewer-side-fade"></div></div>
+    <img class="viewer-main" alt="">
+  </div>
   <div class="viewer-strip"></div>
 `;
 document.body.appendChild(viewerEl);
 const viewerMain = viewerEl.querySelector(".viewer-main");
+const viewerSideLeft = viewerEl.querySelector(".viewer-side.left");
+const viewerSideRight = viewerEl.querySelector(".viewer-side.right");
+const viewerSideLeftImg = viewerEl.querySelector(".viewer-side-left-img");
+const viewerSideRightImg = viewerEl.querySelector(".viewer-side-right-img");
 const viewerStrip = viewerEl.querySelector(".viewer-strip");
 const viewerClose = viewerEl.querySelector(".viewer-close");
 const viewerNavLeft = viewerEl.querySelector(".viewer-nav-left");
@@ -272,7 +304,7 @@ document.body.appendChild(viewerTransit);
 
 const siteTitle = document.createElement("div");
 siteTitle.className = "site-title";
-siteTitle.innerHTML = `<span class="title-icon" aria-hidden="true"></span><span>NewLVL360°</span>`;
+siteTitle.textContent = "NewLVL360°";
 document.body.appendChild(siteTitle);
 
 const modeToggle = document.createElement("button");
@@ -572,12 +604,29 @@ function renderViewerStrip() {
   });
 }
 
+function updateViewerSideImages() {
+  if (!viewerItems.length) return;
+  if (viewerItems.length < 2) {
+    viewerSideLeft.classList.add("hidden");
+    viewerSideRight.classList.add("hidden");
+    return;
+  }
+  const n = viewerItems.length;
+  const prev = viewerItems[(viewerIndex - 1 + n) % n];
+  const next = viewerItems[(viewerIndex + 1) % n];
+  viewerSideLeftImg.src = prev.img.src;
+  viewerSideRightImg.src = next.img.src;
+  viewerSideLeft.classList.remove("hidden");
+  viewerSideRight.classList.remove("hidden");
+}
+
 function setViewerIndex(i) {
   if (!viewerItems.length) return;
   const n = viewerItems.length;
   viewerIndex = ((i % n) + n) % n;
   const media = viewerItems[viewerIndex];
   viewerMain.src = media.img.src;
+  updateViewerSideImages();
   const thumbs = viewerStrip.querySelectorAll(".viewer-thumb");
   thumbs.forEach((el, idx) => el.classList.toggle("active", idx === viewerIndex));
   const active = thumbs[viewerIndex];
@@ -678,12 +727,16 @@ async function openViewerByMedia(media, sourceBox) {
   viewerEl.classList.add("open");
   viewerMain.style.opacity = "0";
   viewerStrip.style.opacity = "0";
+  viewerSideLeft.style.opacity = "0";
+  viewerSideRight.style.opacity = "0";
   renderViewerStrip();
   setViewerIndex(idx);
   const mainReady = waitForViewerMain(viewerItems[idx].img.src);
   await Promise.all([animateViewerOpen(media, sourceBox), mainReady]);
   viewerMain.style.opacity = "1";
   viewerStrip.style.opacity = "1";
+  viewerSideLeft.style.opacity = "";
+  viewerSideRight.style.opacity = "";
   requestAnimationFrame(() => {
     viewerTransit.style.transition = "opacity 140ms ease";
     viewerTransit.style.opacity = "0";
@@ -698,6 +751,8 @@ async function openViewerByMedia(media, sourceBox) {
 function closeViewer() {
   viewerOpen = false;
   viewerEl.classList.remove("open");
+  viewerSideLeft.classList.add("hidden");
+  viewerSideRight.classList.add("hidden");
   viewerTransit.style.display = "none";
   viewerAnimating = false;
 }
@@ -705,6 +760,15 @@ function closeViewer() {
 viewerClose.addEventListener("click", closeViewer);
 viewerNavLeft.addEventListener("click", () => setViewerIndex(viewerIndex - 1));
 viewerNavRight.addEventListener("click", () => setViewerIndex(viewerIndex + 1));
+viewerStrip.addEventListener("wheel", e => {
+  if (!viewerOpen) return;
+  const dx = Math.abs(e.deltaX);
+  const dy = Math.abs(e.deltaY);
+  if (dy > dx) {
+    e.preventDefault();
+    viewerStrip.scrollLeft += e.deltaY;
+  }
+}, { passive: false });
 modeToggle.addEventListener("click", () => {
   startModeTransition(viewMode === "sphere" ? "grid" : "sphere");
 });
