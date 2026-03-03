@@ -100,13 +100,16 @@ canvas.dragging { cursor: grabbing; }
   right: 16px;
   z-index: 24;
   border: 0;
-  border-radius: 64px;
+  border-radius: 12px;
   width: 128px;
   height: 128px;
   padding: 0;
-  background: rgba(0,0,0,0.58);
+  background: rgba(0,0,0,0.28);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
   color: #fff;
   cursor: pointer;
+  transition: border-radius 260ms ease, background-color 260ms ease;
 }
 .mode-toggle svg { width: 100px; height: 100px; display: block; margin: 14px; }
 .mode-toggle .morph-base { stroke: rgba(255,255,255,0.95); fill: none; stroke-linecap: round; stroke-linejoin: round; }
@@ -116,6 +119,7 @@ canvas.dragging { cursor: grabbing; }
 .mode-toggle .grid-g { opacity: 0; transform: rotate(-12deg) scale(0.74); }
 .mode-toggle.grid .sphere-g { opacity: 0; transform: rotate(14deg) scale(0.72); }
 .mode-toggle.grid .grid-g { opacity: 1; transform: rotate(0deg) scale(1); }
+.mode-toggle.grid { border-radius: 64px; }
 
 .grid-mode {
   position: relative;
