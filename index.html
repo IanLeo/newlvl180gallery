@@ -130,6 +130,10 @@ canvas.dragging { cursor: grabbing; }
 .viewer-close svg { width: 116px; height: 116px; display: block; margin: 6px; }
 .viewer-close svg { transition: transform 240ms ease-in-out; transform-origin: 58px 58px; }
 .viewer-close:hover svg { transform: rotate(90deg); }
+.viewer-close.closing svg {
+  transform: rotate(90deg) scale(0.72);
+  opacity: 0.45;
+}
 .viewer-close line {
   stroke: rgba(255,255,255,0.95);
   stroke-width: 1.35938;
@@ -258,6 +262,7 @@ let viewerAnimating = false;
 let viewerHeroItems = [];
 let viewerHeroCenters = [];
 let viewerHeroShift = 0;
+let viewerCloseTimer = null;
 let viewMode = "sphere";
 let modeMorph = 0;
 let modeMorphFrom = 0;
@@ -773,6 +778,7 @@ async function openViewerByMedia(media, sourceBox) {
 function closeViewer() {
   viewerOpen = false;
   viewerEl.classList.remove("open");
+  viewerClose.classList.remove("closing");
   viewerHeroTrack.style.transition = "none";
   viewerHeroTrack.style.setProperty("--hero-shift", "0px");
   viewerHeroTrack.style.opacity = "0";
@@ -782,7 +788,25 @@ function closeViewer() {
   viewerAnimating = false;
 }
 
-viewerClose.addEventListener("click", closeViewer);
+function requestCloseViewer(withIconAnim = false) {
+  if (!viewerOpen) return;
+  if (!withIconAnim) {
+    if (viewerCloseTimer) {
+      clearTimeout(viewerCloseTimer);
+      viewerCloseTimer = null;
+    }
+    closeViewer();
+    return;
+  }
+  if (viewerCloseTimer) clearTimeout(viewerCloseTimer);
+  viewerClose.classList.add("closing");
+  viewerCloseTimer = setTimeout(() => {
+    viewerCloseTimer = null;
+    closeViewer();
+  }, 190);
+}
+
+viewerClose.addEventListener("click", () => requestCloseViewer(true));
 viewerNavLeft.addEventListener("click", () => setViewerIndex(viewerIndex - 1, { direction: -1 }));
 viewerNavRight.addEventListener("click", () => setViewerIndex(viewerIndex + 1, { direction: 1 }));
 viewerStrip.addEventListener("wheel", e => {
@@ -797,7 +821,7 @@ modeToggle.addEventListener("click", () => {
 });
 window.addEventListener("keydown", e => {
   if (!viewerOpen) return;
-  if (e.key === "Escape") closeViewer();
+  if (e.key === "Escape") requestCloseViewer(true);
   else if (e.key === "ArrowLeft") setViewerIndex(viewerIndex - 1, { direction: -1 });
   else if (e.key === "ArrowRight") setViewerIndex(viewerIndex + 1, { direction: 1 });
 });
